@@ -172,9 +172,14 @@ class GuardrailEngine:
     def export_rules(self, filepath: str, fmt: str = "yaml"):
         """Export rules to YAML or JSON."""
         data = {rid: asdict(rule) for rid, rule in self.rules.items()}
-        # Convert enums to strings
+        # Convert enum fields to their string values for portable serialization.
+        # GuardrailRule always has these three enum fields, but we guard with
+        # isinstance to handle any future Optional fields safely.
         for r in data.values():
-            r["category"] = r["category"] if isinstance(r["category"], str) else r["category"]
+            for key in ("category", "severity", "action"):
+                val = r.get(key)
+                if isinstance(val, Enum):
+                    r[key] = val.value
 
         with open(filepath, "w") as f:
             if fmt == "yaml":
