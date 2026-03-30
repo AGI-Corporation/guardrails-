@@ -40,8 +40,8 @@ def main():
                 if text.lower() == "quit":
                     break
                 res = engine.evaluate(text)
-                action = res["action"].value if hasattr(res["action"], "value") else res["action"]
-                print(f"  Action: {action} | Matched Rules: {res['matches']}")
+                action = res.action.value
+                print(f"  Action: {action} | Matched Rules: {res.matches}")
 
         elif choice == "2":
             try:
@@ -127,10 +127,10 @@ def _demo_evaluate():
 
     for t in texts:
         res = engine.evaluate(t)
-        action = res["action"].value if hasattr(res["action"], "value") else res["action"]
-        status = "BLOCKED" if res["matches"] else "ALLOWED"
+        action = res.action.value
+        status = "BLOCKED" if res.matches else "ALLOWED"
         print(f"\n  [{status}] {t[:60]}")
-        print(f"          Action: {action} | Matched: {res['matches']}")
+        print(f"          Action: {action} | Matched: {res.matches}")
 
     print("\n" + "=" * 55)
 
@@ -249,7 +249,7 @@ def _demo_integration():
 
     # --- Audit summary ---
     logs = logger.get_logs(limit=len(test_inputs))
-    blocked = sum(1 for lg in logs if lg.get("action_taken") == "block")
+    blocked = sum(1 for lg in logs if lg.action_taken == "block")
     print(f"\n  Audit: {len(logs)} events logged, {blocked} blocked")
 
     # --- Feedback / learning summary ---

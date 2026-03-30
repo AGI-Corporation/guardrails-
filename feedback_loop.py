@@ -216,3 +216,34 @@ def create_feedback_entry(
         expected_action=expected,
         comment=comment,
     )
+
+
+class FeedbackLoop:
+    """
+    High-level feedback loop that records evaluation outcomes in memory
+    and exposes simple statistics for use in integration pipelines.
+    """
+
+    def __init__(self, engine):
+        self.engine = engine
+        self._records: List[Dict] = []
+
+    def record(self, text: str, action: str, matched_rules: List[str]) -> None:
+        """Record a single evaluation outcome."""
+        self._records.append({
+            "text": text,
+            "action": action,
+            "matched_rules": matched_rules,
+            "timestamp": datetime.utcnow().isoformat(),
+        })
+
+    def get_stats(self) -> Dict:
+        """Return summary statistics for all recorded evaluations."""
+        total = len(self._records)
+        blocked = sum(1 for r in self._records if r["action"] == "block")
+        return {
+            "total_evaluated": total,
+            "blocked": blocked,
+            "allowed": total - blocked,
+            "block_rate_pct": round(blocked / total * 100, 1) if total > 0 else 0.0,
+        }

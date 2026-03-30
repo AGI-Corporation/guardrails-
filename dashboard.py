@@ -1,9 +1,10 @@
 import streamlit as st
-import pd
+import pandas as pd
 import plotly.express as px
 from audit_logger import AuditLogger
 from performance_profiler import PerformanceProfiler
 import datetime
+from dataclasses import asdict
 
 st.set_page_config(page_title="Guardrails Dashboard", layout="wide")
 st.title("🛡️ Guardrails Framework Dashboard")
@@ -19,7 +20,11 @@ if page == "Overview":
 elif page == "Audit Log":
     st.header("Audit Log")
     logs = logger.get_logs()
-    st.table(logs)
+    if logs:
+        df = pd.DataFrame([asdict(entry) for entry in logs])
+        st.dataframe(df)
+    else:
+        st.info("No audit log entries found.")
 elif page == "Performance":
     st.header("Performance")
     st.json(profiler.get_stats())

@@ -67,9 +67,9 @@ class RAGGuardrailProcessor:
         result = self.engine.evaluate(query)
         return RAGGuardrailResult(
             stage=RAGStage.QUERY,
-            action=result.action,
+            action=result.action.value,
             matched_rules=result.matched_rules,
-            severity=result.severity,
+            severity=result.severity.value,
             original_content=query,
         )
 
@@ -79,9 +79,9 @@ class RAGGuardrailProcessor:
             result = self.engine.evaluate(ctx.content)
             results.append(RAGGuardrailResult(
                 stage=RAGStage.CONTEXT,
-                action=result.action,
+                action=result.action.value,
                 matched_rules=result.matched_rules,
-                severity=result.severity,
+                severity=result.severity.value,
                 original_content=ctx.content,
                 details={"source": ctx.source, "score": ctx.score},
             ))
@@ -91,9 +91,9 @@ class RAGGuardrailProcessor:
         result = self.engine.evaluate(response)
         return RAGGuardrailResult(
             stage=RAGStage.RESPONSE,
-            action=result.action,
+            action=result.action.value,
             matched_rules=result.matched_rules,
-            severity=result.severity,
+            severity=result.severity.value,
             original_content=response,
         )
 

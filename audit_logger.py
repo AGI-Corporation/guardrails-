@@ -62,8 +62,19 @@ class AuditLogger:
             """)
             conn.commit()
 
-    def log(self, entry: AuditEntry) -> int:
-        """Log a new audit entry to the database."""
+    def log(self, entry: Optional[AuditEntry] = None, **kwargs) -> int:
+        """Log a new audit entry to the database.
+
+        Can be called with an :class:`AuditEntry` object::
+
+            logger.log(AuditEntry(input_text="...", action_taken="block"))
+
+        Or with keyword arguments that map to :class:`AuditEntry` fields::
+
+            logger.log(input_text="...", action_taken="block", matched_rules=[...])
+        """
+        if entry is None:
+            entry = AuditEntry(**kwargs)
         with self.lock:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()

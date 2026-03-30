@@ -213,3 +213,36 @@ def create_default_plugin_engine() -> PluginEngine:
     engine.register(RepetitionPlugin())
     engine.register(LengthPlugin())
     return engine
+
+
+class PluginManager:
+    """
+    High-level plugin manager that integrates the plugin system with
+    a GuardrailEngine instance.  Drop-in replacement for advanced use-cases
+    where plugin-based checks supplement regex/keyword rules.
+    """
+
+    def __init__(self, engine):
+        self.engine = engine
+        self._plugin_engine: PluginEngine = create_default_plugin_engine()
+
+    def register(self, plugin: GuardrailPlugin) -> None:
+        """Register a custom plugin."""
+        self._plugin_engine.register(plugin)
+
+    def unregister(self, name: str) -> None:
+        """Remove a plugin by name."""
+        self._plugin_engine.unregister(name)
+
+    def list_plugins(self) -> List[str]:
+        """Return the names of all registered plugins."""
+        return list(self._plugin_engine.plugins.keys())
+
+    def evaluate(self, text: str, context: Optional[Dict] = None) -> List[PluginResult]:
+        """Run all registered plugins against ``text``."""
+        return self._plugin_engine.evaluate_all(text, context)
+
+    def get_final_action(self, text: str, context: Optional[Dict] = None) -> str:
+        """Return the most restrictive action across all plugins."""
+        results = self.evaluate(text, context)
+        return self._plugin_engine.get_final_action(results)
