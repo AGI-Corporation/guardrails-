@@ -9,7 +9,8 @@ The Guardrails Framework is a comprehensive toolkit for defining, testing, and e
 ## Features
 
 - **Core Guardrail Engine** - Define and enforce content, topic, format, and custom guardrails
-- **Adversarial Testing** - Automated red-teaming with prompt injection, jailbreak, and boundary testing
+- **Adversarial Testing** - Automated red-teaming with prompt injection, jailbreak, encoding bypass, and boundary testing
+- **Red Hat LLM Pen Testing** - Structured attack-probe suite (40+ probes) aligned with OWASP LLM Top-10 and MITRE ATLAS, covering prompt injection, jailbreak, persona hijacking, encoding bypass, indirect injection, system-prompt extraction, data exfiltration, multi-turn escalation, and token confusion
 - **Audit Logging** - Immutable audit trail with risk scoring and compliance reporting
 - **REST API** - FastAPI-powered server for guardrail evaluation at scale
 - **Streamlit Dashboard** - Real-time monitoring and visualization of guardrail metrics
@@ -27,7 +28,8 @@ guardrails-/
 ├── audit_logger.py           # Immutable audit logging with risk scoring
 ├── api_server.py             # FastAPI REST API server
 ├── content_transformer.py    # Content transformation and sanitization
-├── adversarial_tester.py     # Automated adversarial testing suite
+├── adversarial_tester.py     # Automated adversarial testing suite (mutation-based)
+├── red_team_tester.py        # Red Hat LLM penetration testing (OWASP/MITRE aligned)
 ├── llm_wrapper.py            # LLM provider abstraction layer
 ├── rag_guardrails.py         # RAG-specific guardrail implementations
 ├── plugin_system.py          # Plugin architecture for extensibility
@@ -124,6 +126,54 @@ Test categories include:
 - Boundary condition testing
 - Context manipulation
 - Encoding bypass attempts
+- Base64 / ROT-13 / reversed-text obfuscation
+- Token-split and Markdown formatting obfuscation
+
+## Red Hat LLM Penetration Testing
+
+A structured adversarial probing suite aligned with **OWASP LLM Top-10** and **MITRE ATLAS**:
+
+```python
+from red_team_tester import RedTeamEngine, build_probe_catalog
+from guardrail_framework import GuardrailEngine, create_default_guardrails
+
+engine = GuardrailEngine()
+for rule in create_default_guardrails():
+    engine.add_rule(rule)
+
+rt = RedTeamEngine(engine)
+report = rt.run_full_suite()
+print(report.summary())
+
+# Export full Markdown report
+with open("red_team_report.md", "w") as f:
+    f.write(report.markdown_report())
+```
+
+Attack categories covered (40+ probes):
+
+| Category | OWASP ref | MITRE ATLAS |
+|----------|-----------|-------------|
+| Prompt Injection | LLM01 | AML.T0051 |
+| Jailbreak | LLM01 | AML.T0054 |
+| Role-Play Attacks | LLM01 | AML.T0054 |
+| Encoding Bypass (Base64, ROT-13, homoglyphs, zero-width) | LLM01 | AML.T0051 |
+| Indirect Prompt Injection | LLM01 | AML.T0051 |
+| System Prompt Extraction | LLM06 | AML.T0057 |
+| Data Exfiltration | LLM06 | AML.T0057 |
+| Multi-Turn Escalation | LLM01 | AML.T0054 |
+| Token Confusion | LLM01 | AML.T0051 |
+| Persona Hijacking (DAN, AIM, GOD MODE) | LLM01 | AML.T0054 |
+
+Run interactively:
+
+```bash
+python red_team_tester.py
+# or via quickstart:
+python quickstart.py  # choose option 8
+```
+
+After each run the engine outputs a **bypass rate** per category and prioritised hardening recommendations.
 
 ## Plugin System
 

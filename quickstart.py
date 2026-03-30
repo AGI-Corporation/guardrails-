@@ -20,9 +20,10 @@ def main():
     print("  5. Demo - Evaluate sample texts")
     print("  6. Demo - Adversarial tests")
     print("  7. Demo - Full integration")
-    print("  8. Exit")
+    print("  8. Red Hat - LLM Penetration Test Suite")
+    print("  9. Exit")
 
-    choice = input("\nEnter choice (1-8): ").strip()
+    choice = input("\nEnter choice (1-9): ").strip()
 
     if choice == "1":
         from guardrail_framework import GuardrailCLI
@@ -52,6 +53,10 @@ def main():
         _demo_integration()
 
     elif choice == "8":
+        from red_team_tester import run_red_team_cli
+        run_red_team_cli()
+
+    elif choice == "9":
         print("Goodbye!")
     else:
         print("Invalid choice")
