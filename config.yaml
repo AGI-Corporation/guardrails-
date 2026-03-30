@@ -1,0 +1,82 @@
+# Guardrails Framework - Example Configuration
+# Copy this file to config.yaml and adjust values as needed.
+# Environment variables override config file values where both are supported.
+
+guardrails:
+  # ── Content safety ──────────────────────────────────────────────────────
+  content_safety:
+    enabled: true
+    action: block          # allow | block | warn | transform | log
+    threshold: 0.8
+
+  # ── PII protection ──────────────────────────────────────────────────────
+  pii_protection:
+    enabled: true
+    action: block
+    redact_on_warn: true   # auto-redact when action is "warn"
+
+  # ── Topic restrictions ──────────────────────────────────────────────────
+  topic_restrictions:
+    enabled: false
+    action: block
+    blocked_topics:
+      - competitor
+      - internal_project
+      - confidential
+
+  # ── Custom keyword blocklist ─────────────────────────────────────────────
+  keyword_blocklist:
+    enabled: false
+    action: warn
+    keywords: []
+
+# ── LLM provider ────────────────────────────────────────────────────────────
+llm:
+  provider: openai          # openai | anthropic | mock
+  model: gpt-4o-mini
+  api_key: ${OPENAI_API_KEY}
+  temperature: 0.7
+  max_tokens: 1000
+  # Anthropic alternative:
+  # provider: anthropic
+  # model: claude-3-haiku-20240307
+  # api_key: ${ANTHROPIC_API_KEY}
+
+# ── Audit logging ────────────────────────────────────────────────────────────
+audit:
+  enabled: true
+  db_path: ./audit_log.db   # SQLite database path
+  retention_days: 90
+  export_csv_on_startup: false
+
+# ── API server ───────────────────────────────────────────────────────────────
+api:
+  host: 0.0.0.0
+  port: 8000
+  cors_origins:
+    - "*"
+  log_level: info
+
+# ── Dashboard ────────────────────────────────────────────────────────────────
+dashboard:
+  refresh_interval_seconds: 5
+  max_audit_rows: 500
+
+# ── Performance profiling ────────────────────────────────────────────────────
+performance:
+  enabled: true
+  slow_request_threshold_ms: 500   # log warning if evaluation exceeds this
+
+# ── Feedback loop ────────────────────────────────────────────────────────────
+feedback:
+  enabled: true
+  db_path: ./feedback.db
+  auto_promote_threshold: 10   # promote a pattern after N confirmed violations
+
+# ── Plugin system ────────────────────────────────────────────────────────────
+plugins:
+  enabled: []   # list of plugin names to activate, e.g. ["entropy", "repetition"]
+  entropy:
+    threshold: 4.5
+  repetition:
+    threshold: 0.4
