@@ -1,33 +1,42 @@
 """
 Audit Logging System
-Persistent audit logging with SQLite backend for compliance and traceability.
+Persistent audit logging with SQLite backend for compliance (CMMC, HIPAA, SOC 2).
+Provides search, filtering, and export capabilities.
 """
 
 import json
 import sqlite3
+import csv
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 from dataclasses import dataclass, asdict
 from pathlib import Path
 import threading
 
-
 @dataclass
 class AuditEntry:
-    """Single audit log entry"""
-    id: Optional[int]
-    timestamp: str
-    input_text: str
-    action_taken: str
-    matched_rules: List[str]
-    severity: str
-    user_id: Optional[str]
-    session_id: Optional[str]
-    metadata: Dict
+    """Single audit log entry representing a guardrail evaluation."""
+    id: Optional[int] = None
+    timestamp: str = ""
+    input_text: str = ""
+    action_taken: str = ""
+    matched_rules: List[str] = None
+    severity: str = ""
+    risk_score: float = 0.0
+    user_id: Optional[str] = None
+    session_id: Optional[str] = None
+    metadata: Dict = None
 
+    def __post_init__(self):
+        if not self.timestamp:
+            self.timestamp = datetime.utcnow().isoformat()
+        if self.matched_rules is None:
+            self.matched_rules = []
+        if self.metadata is None:
+            self.metadata = {}
 
 class AuditLogger:
-    """Persistent audit logging with SQLite backend"""
+    """Persistent audit logging with SQLite backend and extended features."""
 
     def __init__(self, db_path: str = "audit_log.db"):
         self.db_path = db_path
@@ -35,7 +44,7 @@ class AuditLogger:
         self._init_db()
 
     def _init_db(self):
-        """Initialize SQLite database"""
+        """Initialize SQLite database with required schema."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS audit_log (
@@ -45,6 +54,7 @@ class AuditLogger:
                     action_taken TEXT NOT NULL,
                     matched_rules TEXT,
                     severity TEXT,
+                    risk_score REAL,
                     user_id TEXT,
                     session_id TEXT,
                     metadata TEXT
@@ -53,120 +63,76 @@ class AuditLogger:
             conn.commit()
 
     def log(self, entry: AuditEntry) -> int:
-        """Log an audit entry and return its ID"""
+        """Log a new audit entry to the database."""
         with self.lock:
             with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute("""
-                    INSERT INTO audit_log
-                    (timestamp, input_text, action_taken, matched_rules, severity, user_id, session_id, metadata)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO audit_log (
+                        timestamp, input_text, action_taken, matched_rules, 
+                        severity, risk_score, user_id, session_id, metadata
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    entry.timestamp or datetime.now().isoformat(),
+                    entry.timestamp,
                     entry.input_text,
                     entry.action_taken,
                     json.dumps(entry.matched_rules),
                     entry.severity,
+                    entry.risk_score,
                     entry.user_id,
                     entry.session_id,
-                    json.dumps(entry.metadata),
+                    json.dumps(entry.metadata)
                 ))
                 conn.commit()
                 return cursor.lastrowid
 
-    def query(
-        self,
-        action: Optional[str] = None,
-        severity: Optional[str] = None,
-        user_id: Optional[str] = None,
-        limit: int = 100,
-    ) -> List[AuditEntry]:
-        """Query audit log entries"""
-        conditions = []
-        params = []
-
-        if action:
-            conditions.append("action_taken = ?")
-            params.append(action)
-        if severity:
-            conditions.append("severity = ?")
-            params.append(severity)
-        if user_id:
-            conditions.append("user_id = ?")
-            params.append(user_id)
-
-        where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-        query = f"SELECT * FROM audit_log {where_clause} ORDER BY timestamp DESC LIMIT ?"
-        params.append(limit)
-
+    def get_logs(self, limit: int = 100, offset: int = 0) -> List[AuditEntry]:
+        """Retrieve paginated audit logs."""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute(query, params).fetchall()
-
-        return [
-            AuditEntry(
-                id=row["id"],
-                timestamp=row["timestamp"],
-                input_text=row["input_text"],
-                action_taken=row["action_taken"],
-                matched_rules=json.loads(row["matched_rules"] or "[]"),
-                severity=row["severity"],
-                user_id=row["user_id"],
-                session_id=row["session_id"],
-                metadata=json.loads(row["metadata"] or "{}"),
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+                (limit, offset)
             )
-            for row in rows
-        ]
+            return [self._row_to_entry(row) for row in cursor.fetchall()]
 
-    def get_statistics(self) -> Dict:
-        """Get aggregate statistics from audit log"""
+    def search(self, query: str) -> List[AuditEntry]:
+        """Search logs by input text or action."""
         with sqlite3.connect(self.db_path) as conn:
-            total = conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0]
-            blocked = conn.execute(
-                "SELECT COUNT(*) FROM audit_log WHERE action_taken = 'block'"
-            ).fetchone()[0]
-            by_severity = dict(
-                conn.execute(
-                    "SELECT severity, COUNT(*) FROM audit_log GROUP BY severity"
-                ).fetchall()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM audit_log WHERE input_text LIKE ? OR action_taken LIKE ? ORDER BY timestamp DESC",
+                (f"%{query}%", f"%{query}%")
             )
+            return [self._row_to_entry(row) for row in cursor.fetchall()]
 
-        return {
-            "total": total,
-            "blocked": blocked,
-            "allowed": total - blocked,
-            "block_rate": round(blocked / total * 100, 2) if total > 0 else 0,
-            "by_severity": by_severity,
-        }
+    def export_csv(self, output_path: Union[str, Path]):
+        """Export all logs to a CSV file."""
+        logs = self.get_logs(limit=10000)
+        with open(output_path, 'w', newline='') as f:
+            if not logs:
+                return
+            writer = csv.DictWriter(f, fieldnames=asdict(logs[0]).keys())
+            writer.writeheader()
+            for log in logs:
+                data = asdict(log)
+                data['matched_rules'] = json.dumps(data['matched_rules'])
+                data['metadata'] = json.dumps(data['metadata'])
+                writer.writerow(data)
 
-    def export_csv(self, filepath: str):
-        """Export audit log to CSV"""
-        import csv
-        entries = self.query(limit=100000)
-        with open(filepath, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["id", "timestamp", "action_taken", "severity", "matched_rules", "user_id"])
-            for e in entries:
-                writer.writerow([e.id, e.timestamp, e.action_taken, e.severity, e.matched_rules, e.user_id])
-
-
-def create_audit_entry(
-    input_text: str,
-    action_taken: str,
-    matched_rules: List[str],
-    severity: str,
-    user_id: Optional[str] = None,
-    session_id: Optional[str] = None,
-    metadata: Optional[Dict] = None,
-) -> AuditEntry:
-    """Helper to create an AuditEntry"""
-    return AuditEntry(
-        id=None,
-        timestamp=datetime.now().isoformat(),
-        input_text=input_text,
-        action_taken=action_taken,
-        matched_rules=matched_rules,
-        severity=severity,
-        user_id=user_id,
-        session_id=session_id,
-        metadata=metadata or {},
-    )
+    def _row_to_entry(self, row: sqlite3.Row) -> AuditEntry:
+        """Convert a database row to an AuditEntry object."""
+        return AuditEntry(
+            id=row['id'],
+            timestamp=row['timestamp'],
+            input_text=row['input_text'],
+            action_taken=row['action_taken'],
+            matched_rules=json.loads(row['matched_rules']),
+            severity=row['severity'],
+            risk_score=row['risk_score'],
+            user_id=row['user_id'],
+            session_id=row['session_id'],
+            metadata=json.loads(row['metadata'])
+        )
