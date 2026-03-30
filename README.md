@@ -1,3 +1,4 @@
+[![CI](https://github.com/AGI-Corporation/guardrails-/actions/workflows/main.yml/badge.svg)](https://github.com/AGI-Corporation/guardrails-/actions/workflows/main.yml)
 # 🛡️ Guardrails Framework
 
 > **Production-grade AI safety enforcement for LLM applications** — define policies, red-team at scale, log everything, and ship with confidence.
@@ -315,3 +316,11 @@ MIT — see [LICENSE](./LICENSE) for details.
 ---
 
 **Built by [AGI Corporation](https://github.com/AGI-Corporation)** — open-source AI safety infrastructure for the responsible AI era.
+
+## Community & Support
+
+- **GitHub Discussions**: For Q&A, ideas, and general talk.
+- **Issues**: For bug reports and feature requests.
+- **Wiki**: Detailed documentation and architecture deep-dives.
+
+Built by [AGI Corporation](https://github.com/AGI-Corporation) — securing the future of AI.
