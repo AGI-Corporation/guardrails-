@@ -204,7 +204,7 @@ def create_feedback_entry(
     user_id: Optional[str] = None,
     comment: str = "",
 ) -> FeedbackEntry:
-    expected = "allow" if feedback_type == FeedbackType.FALSE_POSITIVE else "block"
+    expected = "allow" if feedback_type in (FeedbackType.FALSE_POSITIVE, FeedbackType.CORRECT_ALLOW) else "block"
     return FeedbackEntry(
         id=None,
         timestamp=datetime.now().isoformat(),
