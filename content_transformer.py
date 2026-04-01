@@ -29,6 +29,10 @@ class ContentTransformer:
         self.register("redact_email", self._redact_email)
         self.register("redact_phone", self._redact_phone)
         self.register("mask_profanity", self._mask_profanity)
+        self.register("redact_ip_address", self._redact_ip_address)
+        self.register("redact_api_key", self._redact_api_key)
+        self.register("redact_jwt", self._redact_jwt)
+        self.register("redact_passport", self._redact_passport)
 
     def register(self, name: str, transformer: Callable):
         self.transformers[name] = transformer
@@ -54,7 +58,14 @@ class ContentTransformer:
         )
 
     def apply_all_pii(self, text: str) -> TransformationResult:
-        return self.apply(text, ["redact_ssn", "redact_credit_card", "redact_email", "redact_phone"])
+        return self.apply(text, [
+            "redact_ssn", "redact_credit_card", "redact_email", "redact_phone",
+            "redact_ip_address", "redact_api_key", "redact_jwt", "redact_passport",
+        ])
+
+    def apply_all(self, text: str) -> TransformationResult:
+        """Apply every registered transformer."""
+        return self.apply(text, list(self.transformers.keys()))
 
     # ── Built-in transformers ───────────────────────────────────────────────
 
@@ -98,4 +109,32 @@ class ContentTransformer:
             if new_result != result:
                 n += 1
                 result = new_result
+        return result, n
+
+    @staticmethod
+    def _redact_ip_address(text: str):
+        pattern = r"\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b"
+        result, n = re.subn(pattern, "[IP REDACTED]", text)
+        return result, n
+
+    @staticmethod
+    def _redact_api_key(text: str):
+        pattern = (
+            r"\b(sk-[A-Za-z0-9]{20,}"
+            r"|ghp_[A-Za-z0-9]{36}"
+            r"|AKIA[A-Z0-9]{16})\b"
+        )
+        result, n = re.subn(pattern, "[API KEY REDACTED]", text)
+        return result, n
+
+    @staticmethod
+    def _redact_jwt(text: str):
+        pattern = r"\beyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\b"
+        result, n = re.subn(pattern, "[JWT REDACTED]", text)
+        return result, n
+
+    @staticmethod
+    def _redact_passport(text: str):
+        pattern = r"(?i)(passport\s+(number|no\.?|#)\s*[:\-]?\s*)[A-Z]{1,2}\d{6,9}"
+        result, n = re.subn(pattern, r"\1[PASSPORT REDACTED]", text)
         return result, n

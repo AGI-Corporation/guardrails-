@@ -40,8 +40,7 @@ def main():
                 if text.lower() == "quit":
                     break
                 res = engine.evaluate(text)
-                action = res["action"].value if hasattr(res["action"], "value") else res["action"]
-                print(f"  Action: {action} | Matched Rules: {res['matches']}")
+                print(f"  Action: {res.action} | Matched Rules: {res.matched_rules}")
 
         elif choice == "2":
             try:
@@ -127,10 +126,9 @@ def _demo_evaluate():
 
     for t in texts:
         res = engine.evaluate(t)
-        action = res["action"].value if hasattr(res["action"], "value") else res["action"]
-        status = "BLOCKED" if res["matches"] else "ALLOWED"
+        status = "BLOCKED" if res.matched_rules else "ALLOWED"
         print(f"\n  [{status}] {t[:60]}")
-        print(f"          Action: {action} | Matched: {res['matches']}")
+        print(f"          Action: {res.action} | Matched: {res.matched_rules}")
 
     print("\n" + "=" * 55)
 
@@ -149,29 +147,21 @@ def _demo_adversarial():
         engine.add_rule(r)
 
     tester = AdversarialTester(engine)
-    results = tester.run_full_suite()
-
-    print("\nAdversarial Test Summary:")
-    for cat, score in results.items():
-        bar = "#" * int(score * 20)
-        print(f"  {cat:<30} [{bar:<20}] {score * 100:.1f}% blocked")
-
-    overall = sum(results.values()) / len(results) if results else 0
-    print(f"\n  Overall block rate: {overall * 100:.1f}%")
-    print("=" * 55)
+    report = tester.run_full_suite_report()
+    print(report.summary())
 
 
 def _demo_integration():
     """
     Demo: Full integration showcase.
     Demonstrates GuardrailEngine + ContentTransformer + AuditLogger
-    + PerformanceProfiler + FeedbackLoop all working together.
+    + PerformanceProfiler + FeedbackStore all working together.
     """
     from guardrail_framework import GuardrailEngine, create_default_guardrails
     from content_transformer import ContentTransformer
-    from audit_logger import AuditLogger
+    from audit_logger import AuditLogger, AuditEntry
     from performance_profiler import PerformanceProfiler
-    from feedback_loop import FeedbackLoop
+    from feedback_loop import FeedbackStore, FeedbackEntry, FeedbackType
 
     print("\n" + "=" * 55)
     print("  DEMO: Full Integration")
@@ -185,7 +175,7 @@ def _demo_integration():
     transformer = ContentTransformer()
     logger = AuditLogger()
     profiler = PerformanceProfiler()
-    feedback = FeedbackLoop(engine)
+    feedback_store = FeedbackStore()
 
     test_inputs = [
         "Hello! My name is Alice.",
@@ -210,25 +200,35 @@ def _demo_integration():
             with profiler.time("guardrail_engine", "evaluate"):
                 result = engine.evaluate(cleaned)
 
-            action = result["action"]
-            matched = result["matches"]
-            action_str = action.value if hasattr(action, "value") else str(action)
+            action_str = result.action
+            matched = result.matched_rules
 
             # Step 3: Log to audit trail
-            logger.log(
+            logger.log(AuditEntry(
                 input_text=text,
                 action_taken=action_str,
                 matched_rules=matched,
-                severity="high" if matched else "low",
+                severity=result.severity,
+                risk_score=result.risk_score,
                 metadata={
                     "transforms_applied": transform_result.transformations_applied,
                     "changes_made": transform_result.changes_made,
                     "cleaned_text": cleaned,
                 },
-            )
+            ))
 
-            # Step 4: Send feedback for continuous learning
-            feedback.record(text, action_str, matched)
+            # Step 4: Record feedback for continuous learning
+            feedback_type = FeedbackType.CORRECT_BLOCK if matched else FeedbackType.CORRECT_ALLOW
+            feedback_store.add(FeedbackEntry(
+                id=None,
+                timestamp="",
+                text=text,
+                original_action=action_str,
+                feedback_type=feedback_type,
+                user_id=None,
+                matched_rules=matched,
+                expected_action=action_str,
+            ))
 
         transforms_info = (
             ", ".join(transform_result.transformations_applied)
@@ -249,15 +249,12 @@ def _demo_integration():
 
     # --- Audit summary ---
     logs = logger.get_logs(limit=len(test_inputs))
-    blocked = sum(1 for lg in logs if lg.get("action_taken") == "block")
+    blocked = sum(1 for lg in logs if lg.action_taken == "block")
     print(f"\n  Audit: {len(logs)} events logged, {blocked} blocked")
 
-    # --- Feedback / learning summary ---
-    try:
-        fb_stats = feedback.get_stats()
-        print(f"  Feedback loop: {fb_stats}")
-    except Exception:
-        pass
+    # --- Feedback summary ---
+    fb_stats = feedback_store.get_stats()
+    print(f"  Feedback loop: {fb_stats}")
 
     print("\n" + "=" * 55)
     print("  Integration demo complete. Audit log written.")
@@ -327,7 +324,7 @@ def _demo_performance_profiler():
 
 def _demo_plugin_system():
     """Demo: Plugin system with custom guardrail plugins."""
-    from plugin_system import PluginManager
+    from plugin_system import create_default_plugin_engine
     from guardrail_framework import GuardrailEngine, create_default_guardrails
 
     print("\n" + "=" * 55)
@@ -338,17 +335,19 @@ def _demo_plugin_system():
     for r in create_default_guardrails():
         engine.add_rule(r)
 
-    manager = PluginManager(engine)
+    plugin_engine = create_default_plugin_engine()
 
     print("\n  Loaded plugins:")
-    plugins = manager.list_plugins()
-    if plugins:
-        for p in plugins:
-            print(f"    - {p}")
-    else:
-        print("    (no plugins currently loaded)")
+    for name, plugin in plugin_engine.plugins.items():
+        print(f"    - {name}: {plugin.description}")
 
-    print("\n  Plugin system ready. Drop .py plugin files into the plugins/ directory.")
+    sample = "sk-abcdefghijklmnopqrstuvwxyz123456789 " + " ".join(["test"] * 30)
+    results = plugin_engine.evaluate_all(sample)
+    print(f"\n  Sample evaluation on high-entropy / repetitive text:")
+    for r in results:
+        print(f"    [{r.action.upper()}] {r.plugin_name}: score={r.score:.2f} {r.details}")
+
+    print("\n  Plugin system ready. Extend plugin_system.py to add custom plugins.")
     print("=" * 55)
 
 

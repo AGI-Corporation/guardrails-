@@ -8,9 +8,11 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
+import re
 import statistics
 import math
 import time
+import unicodedata
 
 
 @dataclass
@@ -206,10 +208,136 @@ class LengthPlugin(GuardrailPlugin):
         return PluginResult(plugin_name=self.name, passed=True, score=0.0, action="allow")
 
 
+class LanguageAnomalyPlugin(GuardrailPlugin):
+    """
+    Detects unusual Unicode character distributions that may indicate
+    homoglyph substitution, script-mixing, or language-switch evasion.
+    """
+
+    SUSPICIOUS_SCRIPTS = {"CYRILLIC", "GREEK", "ARMENIAN", "GEORGIAN"}
+
+    @property
+    def name(self) -> str:
+        return "language_anomaly_detector"
+
+    @property
+    def description(self) -> str:
+        return "Detects homoglyph/script-mixing evasion attempts"
+
+    def evaluate(self, text: str, context: Optional[Dict] = None) -> PluginResult:
+        if not text:
+            return PluginResult(plugin_name=self.name, passed=True, score=0.0, action="allow")
+
+        script_counts: Dict[str, int] = {}
+        for char in text:
+            name = unicodedata.name(char, "")
+            script = name.split()[0] if name else "UNKNOWN"
+            script_counts[script] = script_counts.get(script, 0) + 1
+
+        suspicious = {s: c for s, c in script_counts.items() if s in self.SUSPICIOUS_SCRIPTS}
+        if suspicious:
+            ratio = sum(suspicious.values()) / max(len(text), 1)
+            if ratio > 0.05:
+                return PluginResult(
+                    plugin_name=self.name,
+                    passed=False,
+                    score=min(1.0, ratio * 5),
+                    action="warn" if ratio < 0.3 else "block",
+                    details={"suspicious_scripts": suspicious, "ratio": round(ratio, 3)},
+                )
+        return PluginResult(plugin_name=self.name, passed=True, score=0.0, action="allow")
+
+
+class PIIDensityPlugin(GuardrailPlugin):
+    """
+    Warns when a text contains an unusually high density of PII-like patterns
+    (emails, phone numbers, numeric sequences), which may indicate data exfiltration.
+    """
+
+    _PATTERNS = [
+        re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"),       # email
+        re.compile(r"\b(?:\+?1[\s\-]?)?(?:\(?\d{3}\)?[\s.\-]?)\d{3}[\s.\-]?\d{4}\b"),  # US phone
+        re.compile(r"\b\d{3}-\d{2}-\d{4}\b"),                                          # SSN
+        re.compile(r"\b(?:\d{4}[\s\-]?){3}\d{4}\b"),                                   # credit card
+    ]
+
+    def __init__(self, max_pii_density: float = 0.1):
+        self.max_pii_density = max_pii_density
+
+    @property
+    def name(self) -> str:
+        return "pii_density_guard"
+
+    @property
+    def description(self) -> str:
+        return "Blocks requests with abnormally high PII density (data exfiltration)"
+
+    def evaluate(self, text: str, context: Optional[Dict] = None) -> PluginResult:
+        total_matches = sum(len(p.findall(text)) for p in self._PATTERNS)
+        word_count = max(len(text.split()), 1)
+        density = total_matches / word_count
+
+        if density > self.max_pii_density:
+            return PluginResult(
+                plugin_name=self.name,
+                passed=False,
+                score=min(1.0, density * 5),
+                action="block",
+                details={"pii_matches": total_matches, "density": round(density, 3)},
+            )
+        return PluginResult(plugin_name=self.name, passed=True, score=0.0, action="allow")
+
+
+class SentimentPlugin(GuardrailPlugin):
+    """
+    Lightweight heuristic for strongly negative / threatening sentiment.
+    Uses keyword scoring rather than an ML model to avoid heavy dependencies.
+    """
+
+    _THREAT_KEYWORDS = [
+        "kill", "attack", "destroy", "hack", "exploit", "threaten",
+        "harm", "hurt", "bomb", "shoot", "stab", "murder", "rape",
+        "extort", "blackmail", "ransom",
+    ]
+
+    def __init__(self, threat_threshold: float = 0.15):
+        self.threat_threshold = threat_threshold
+
+    @property
+    def name(self) -> str:
+        return "sentiment_threat_guard"
+
+    @property
+    def description(self) -> str:
+        return "Flags text with high density of threatening / violent language"
+
+    def evaluate(self, text: str, context: Optional[Dict] = None) -> PluginResult:
+        lower = text.lower()
+        words = lower.split()
+        if not words:
+            return PluginResult(plugin_name=self.name, passed=True, score=0.0, action="allow")
+
+        hits = [kw for kw in self._THREAT_KEYWORDS if kw in lower]
+        density = len(hits) / len(words)
+
+        if density >= self.threat_threshold:
+            return PluginResult(
+                plugin_name=self.name,
+                passed=False,
+                score=min(1.0, density / self.threat_threshold),
+                action="block" if density >= self.threat_threshold * 2 else "warn",
+                details={"matched_keywords": hits, "density": round(density, 3)},
+            )
+        return PluginResult(plugin_name=self.name, passed=True, score=0.0, action="allow")
+
+
 def create_default_plugin_engine() -> PluginEngine:
-    """Create a plugin engine with default plugins"""
+    """Create a plugin engine with all default enterprise plugins."""
     engine = PluginEngine()
     engine.register(EntropyPlugin())
     engine.register(RepetitionPlugin())
     engine.register(LengthPlugin())
+    engine.register(LanguageAnomalyPlugin())
+    engine.register(PIIDensityPlugin())
+    engine.register(SentimentPlugin())
     return engine
