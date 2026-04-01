@@ -62,8 +62,16 @@ class AuditLogger:
             """)
             conn.commit()
 
-    def log(self, entry: AuditEntry) -> int:
-        """Log a new audit entry to the database."""
+    def log(self, entry: AuditEntry = None, **kwargs) -> int:
+        """Log a new audit entry to the database.
+
+        Can be called with an AuditEntry object:
+            logger.log(AuditEntry(input_text=..., action_taken=...))
+        Or with keyword arguments directly:
+            logger.log(input_text=..., action_taken=...)
+        """
+        if entry is None:
+            entry = AuditEntry(**kwargs)
         with self.lock:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
@@ -86,8 +94,8 @@ class AuditLogger:
                 conn.commit()
                 return cursor.lastrowid
 
-    def get_logs(self, limit: int = 100, offset: int = 0) -> List[AuditEntry]:
-        """Retrieve paginated audit logs."""
+    def get_logs(self, limit: int = 100, offset: int = 0) -> List[Dict]:
+        """Retrieve paginated audit logs as plain dictionaries."""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
@@ -95,9 +103,10 @@ class AuditLogger:
                 "SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT ? OFFSET ?",
                 (limit, offset)
             )
-            return [self._row_to_entry(row) for row in cursor.fetchall()]
+            entries = [self._row_to_entry(row) for row in cursor.fetchall()]
+            return [self._entry_to_dict(e) for e in entries]
 
-    def search(self, query: str) -> List[AuditEntry]:
+    def search(self, query: str) -> List[Dict]:
         """Search logs by input text or action."""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
@@ -106,7 +115,8 @@ class AuditLogger:
                 "SELECT * FROM audit_log WHERE input_text LIKE ? OR action_taken LIKE ? ORDER BY timestamp DESC",
                 (f"%{query}%", f"%{query}%")
             )
-            return [self._row_to_entry(row) for row in cursor.fetchall()]
+            entries = [self._row_to_entry(row) for row in cursor.fetchall()]
+            return [self._entry_to_dict(e) for e in entries]
 
     def export_csv(self, output_path: Union[str, Path]):
         """Export all logs to a CSV file."""
@@ -114,10 +124,10 @@ class AuditLogger:
         with open(output_path, 'w', newline='') as f:
             if not logs:
                 return
-            writer = csv.DictWriter(f, fieldnames=asdict(logs[0]).keys())
+            writer = csv.DictWriter(f, fieldnames=logs[0].keys())
             writer.writeheader()
             for log in logs:
-                data = asdict(log)
+                data = dict(log)
                 data['matched_rules'] = json.dumps(data['matched_rules'])
                 data['metadata'] = json.dumps(data['metadata'])
                 writer.writerow(data)
@@ -136,3 +146,8 @@ class AuditLogger:
             session_id=row['session_id'],
             metadata=json.loads(row['metadata'])
         )
+
+    @staticmethod
+    def _entry_to_dict(entry: AuditEntry) -> Dict:
+        """Convert an AuditEntry to a plain dictionary."""
+        return asdict(entry)

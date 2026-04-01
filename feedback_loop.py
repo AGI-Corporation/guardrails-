@@ -216,3 +216,62 @@ def create_feedback_entry(
         expected_action=expected,
         comment=comment,
     )
+
+
+class FeedbackLoop:
+    """High-level feedback loop that records guardrail outcomes and exposes stats.
+
+    Wraps FeedbackStore + TuningSuggester for easy integration into pipelines.
+    """
+
+    def __init__(self, engine=None, db_path: str = "feedback.db"):
+        self.engine = engine
+        self.store = FeedbackStore(db_path=db_path)
+        self._records: List[Dict] = []
+
+    def record(
+        self,
+        text: str,
+        action: str,
+        matched_rules: Optional[List[str]] = None,
+        user_id: Optional[str] = None,
+    ) -> None:
+        """Record a guardrail outcome for later analysis."""
+        matched = matched_rules or []
+        if action == "block" and matched:
+            feedback_type = FeedbackType.CORRECT_BLOCK
+        elif action == "allow" and not matched:
+            feedback_type = FeedbackType.CORRECT_ALLOW
+        elif action == "block":
+            feedback_type = FeedbackType.CORRECT_BLOCK
+        else:
+            feedback_type = FeedbackType.CORRECT_ALLOW
+
+        entry = create_feedback_entry(
+            text=text,
+            original_action=action,
+            feedback_type=feedback_type,
+            matched_rules=matched,
+            user_id=user_id,
+        )
+        self.store.add(entry)
+        self._records.append({
+            "text": text,
+            "action": action,
+            "matched_rules": matched,
+            "timestamp": entry.timestamp,
+        })
+
+    def get_stats(self) -> Dict:
+        """Return aggregate stats on recorded feedback."""
+        raw_stats = self.store.get_stats()
+        raw_stats["total_recorded"] = len(self._records)
+        if self._records:
+            block_count = sum(1 for r in self._records if r["action"] == "block")
+            raw_stats["block_rate"] = round(block_count / len(self._records), 3)
+        return raw_stats
+
+    def get_suggestions(self) -> List[Dict]:
+        """Return tuning suggestions based on accumulated feedback."""
+        suggester = TuningSuggester(self.store)
+        return suggester.suggest_keyword_additions() + suggester.suggest_rule_relaxation()
