@@ -213,3 +213,49 @@ def create_default_plugin_engine() -> PluginEngine:
     engine.register(RepetitionPlugin())
     engine.register(LengthPlugin())
     return engine
+
+
+# ── High-level facade ─────────────────────────────────────────────────────
+
+class PluginManager:
+    """
+    Convenience wrapper that ties the ``PluginEngine`` to a
+    ``GuardrailEngine`` instance.
+
+    Usage::
+
+        from plugin_system import PluginManager
+        manager = PluginManager(guardrail_engine)
+        print(manager.list_plugins())
+    """
+
+    def __init__(self, engine=None):
+        """
+        Parameters
+        ----------
+        engine : GuardrailEngine, optional
+            The guardrail engine whose results will be augmented by plugins.
+        """
+        self.engine = engine
+        self.plugin_engine: PluginEngine = create_default_plugin_engine()
+
+    def register(self, plugin: GuardrailPlugin) -> None:
+        """Register a custom plugin."""
+        self.plugin_engine.register(plugin)
+
+    def unregister(self, name: str) -> None:
+        """Remove a plugin by name."""
+        self.plugin_engine.unregister(name)
+
+    def list_plugins(self) -> List[str]:
+        """Return names of all currently registered plugins."""
+        return list(self.plugin_engine.plugins.keys())
+
+    def evaluate(self, text: str, context: Optional[Dict] = None) -> List[PluginResult]:
+        """Run all plugins against *text* and return their results."""
+        return self.plugin_engine.evaluate_all(text, context)
+
+    def get_final_action(self, text: str, context: Optional[Dict] = None) -> str:
+        """Return the overall action after running all plugins."""
+        results = self.evaluate(text, context)
+        return self.plugin_engine.get_final_action(results)

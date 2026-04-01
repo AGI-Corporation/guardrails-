@@ -38,56 +38,67 @@ class FeedbackStore:
 
     def __init__(self, db_path: str = "feedback.db"):
         self.db_path = db_path
+        # For in-memory databases, reuse a single persistent connection.
+        self._conn: Optional[sqlite3.Connection] = (
+            sqlite3.connect(":memory:", check_same_thread=False)
+            if db_path == ":memory:"
+            else None
+        )
         self._init_db()
 
+    def _get_conn(self) -> sqlite3.Connection:
+        if self._conn is not None:
+            return self._conn
+        return sqlite3.connect(self.db_path)
+
     def _init_db(self):
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS feedback (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp TEXT NOT NULL,
-                    text TEXT,
-                    original_action TEXT,
-                    feedback_type TEXT,
-                    user_id TEXT,
-                    matched_rules TEXT,
-                    expected_action TEXT,
-                    comment TEXT
-                )
-            """)
-            conn.commit()
+        conn = self._get_conn()
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                text TEXT,
+                original_action TEXT,
+                feedback_type TEXT,
+                user_id TEXT,
+                matched_rules TEXT,
+                expected_action TEXT,
+                comment TEXT
+            )
+        """)
+        conn.commit()
 
     def add(self, entry: FeedbackEntry) -> int:
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute("""
-                INSERT INTO feedback
-                (timestamp, text, original_action, feedback_type, user_id, matched_rules, expected_action, comment)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                entry.timestamp or datetime.now().isoformat(),
-                entry.text,
-                entry.original_action,
-                entry.feedback_type.value,
-                entry.user_id,
-                json.dumps(entry.matched_rules),
-                entry.expected_action,
-                entry.comment,
-            ))
-            conn.commit()
-            return cursor.lastrowid
+        conn = self._get_conn()
+        cursor = conn.execute("""
+            INSERT INTO feedback
+            (timestamp, text, original_action, feedback_type, user_id, matched_rules, expected_action, comment)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            entry.timestamp or datetime.now().isoformat(),
+            entry.text,
+            entry.original_action,
+            entry.feedback_type.value,
+            entry.user_id,
+            json.dumps(entry.matched_rules),
+            entry.expected_action,
+            entry.comment,
+        ))
+        conn.commit()
+        return cursor.lastrowid
 
     def get_all(self, feedback_type: Optional[FeedbackType] = None) -> List[FeedbackEntry]:
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            if feedback_type:
-                rows = conn.execute(
-                    "SELECT * FROM feedback WHERE feedback_type = ? ORDER BY timestamp DESC",
-                    (feedback_type.value,)
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM feedback ORDER BY timestamp DESC"
-                ).fetchall()
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        if feedback_type:
+            rows = conn.execute(
+                "SELECT * FROM feedback WHERE feedback_type = ? ORDER BY timestamp DESC",
+                (feedback_type.value,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM feedback ORDER BY timestamp DESC"
+            ).fetchall()
 
         return [
             FeedbackEntry(
@@ -216,3 +227,106 @@ def create_feedback_entry(
         expected_action=expected,
         comment=comment,
     )
+
+
+# ── High-level convenience class ──────────────────────────────────────────
+
+class FeedbackLoop:
+    """
+    Simple facade over ``FeedbackStore`` and ``TuningSuggester`` that ties
+    into the ``GuardrailEngine`` for easy drop-in use.
+
+    Usage::
+
+        from feedback_loop import FeedbackLoop
+        loop = FeedbackLoop(engine)
+        loop.record("text", "block", ["ssn"])
+        print(loop.get_stats())
+    """
+
+    def __init__(self, engine=None, db_path: str = "feedback.db"):
+        self.engine = engine
+        self.store = FeedbackStore(db_path=db_path)
+        self.suggester = TuningSuggester(self.store)
+
+    def record(
+        self,
+        text: str,
+        action: str,
+        matched_rules: Optional[List[str]] = None,
+        feedback_type: Optional[FeedbackType] = None,
+        user_id: Optional[str] = None,
+        comment: str = "",
+    ) -> int:
+        """Record an evaluation outcome into the feedback store.
+
+        Parameters
+        ----------
+        text : str
+            The original input text.
+        action : str
+            The action taken by the engine (``"allow"`` or ``"block"``).
+        matched_rules : list of str, optional
+            Rule IDs that fired for this evaluation.
+        feedback_type : FeedbackType, optional
+            Override the feedback type; inferred from *action* when omitted.
+        user_id : str, optional
+            Identifier for the user submitting feedback.
+        comment : str
+            Free-text annotation.
+        """
+        if feedback_type is None:
+            feedback_type = (
+                FeedbackType.CORRECT_BLOCK if action == "block" else FeedbackType.CORRECT_ALLOW
+            )
+        entry = create_feedback_entry(
+            text=text,
+            original_action=action,
+            feedback_type=feedback_type,
+            matched_rules=matched_rules or [],
+            user_id=user_id,
+            comment=comment,
+        )
+        return self.store.add(entry)
+
+    def mark_false_positive(
+        self,
+        text: str,
+        matched_rules: Optional[List[str]] = None,
+        user_id: Optional[str] = None,
+        comment: str = "",
+    ) -> int:
+        """Mark a block decision as a false positive (should have been allowed)."""
+        return self.record(
+            text=text,
+            action="block",
+            matched_rules=matched_rules,
+            feedback_type=FeedbackType.FALSE_POSITIVE,
+            user_id=user_id,
+            comment=comment,
+        )
+
+    def mark_false_negative(
+        self,
+        text: str,
+        matched_rules: Optional[List[str]] = None,
+        user_id: Optional[str] = None,
+        comment: str = "",
+    ) -> int:
+        """Mark an allow decision as a false negative (should have been blocked)."""
+        return self.record(
+            text=text,
+            action="allow",
+            matched_rules=matched_rules,
+            feedback_type=FeedbackType.FALSE_NEGATIVE,
+            user_id=user_id,
+            comment=comment,
+        )
+
+    def get_stats(self) -> Dict:
+        """Return aggregate feedback statistics."""
+        return self.store.get_stats()
+
+    def generate_report(self) -> str:
+        """Generate a human-readable tuning report."""
+        return self.suggester.generate_report()

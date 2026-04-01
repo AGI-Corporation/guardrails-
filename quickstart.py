@@ -29,7 +29,7 @@ def main():
 """)
         choice = input("Enter choice (1-12): ").strip()
 
-        if choice == "1":
+        elif choice == "1":
             from guardrail_framework import GuardrailEngine, create_default_guardrails
             engine = GuardrailEngine()
             for r in create_default_guardrails():
@@ -40,8 +40,7 @@ def main():
                 if text.lower() == "quit":
                     break
                 res = engine.evaluate(text)
-                action = res["action"].value if hasattr(res["action"], "value") else res["action"]
-                print(f"  Action: {action} | Matched Rules: {res['matches']}")
+                print(f"  Action: {res.action} | Matched Rules: {res.matched_rules}")
 
         elif choice == "2":
             try:
@@ -127,10 +126,9 @@ def _demo_evaluate():
 
     for t in texts:
         res = engine.evaluate(t)
-        action = res["action"].value if hasattr(res["action"], "value") else res["action"]
-        status = "BLOCKED" if res["matches"] else "ALLOWED"
+        status = "BLOCKED" if res.matched_rules else "ALLOWED"
         print(f"\n  [{status}] {t[:60]}")
-        print(f"          Action: {action} | Matched: {res['matches']}")
+        print(f"          Action: {res.action} | Matched: {res.matched_rules}")
 
     print("\n" + "=" * 55)
 
@@ -210,9 +208,9 @@ def _demo_integration():
             with profiler.time("guardrail_engine", "evaluate"):
                 result = engine.evaluate(cleaned)
 
-            action = result["action"]
-            matched = result["matches"]
-            action_str = action.value if hasattr(action, "value") else str(action)
+            action = result.action
+            matched = result.matched_rules
+            action_str = action
 
             # Step 3: Log to audit trail
             logger.log(
