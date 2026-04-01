@@ -29,7 +29,7 @@ def main():
 """)
         choice = input("Enter choice (1-12): ").strip()
 
-        elif choice == "1":
+        if choice == "1":
             from guardrail_framework import GuardrailEngine, create_default_guardrails
             engine = GuardrailEngine()
             for r in create_default_guardrails():

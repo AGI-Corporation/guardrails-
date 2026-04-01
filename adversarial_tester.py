@@ -164,8 +164,7 @@ class AdversarialTester:
                 # Evaluate the raw seed and all mutations
                 for text in [seed] + [m.mutated for m in self.generate_all(seed)]:
                     result = self.engine.evaluate(text)
-                    action = result.action if hasattr(result, "action") else result.get("action", "allow")
-                    if action == "block":
+                    if result.action == "block":
                         blocked += 1
                     total += 1
             results[category] = blocked / total if total > 0 else 0.0

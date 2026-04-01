@@ -43,6 +43,9 @@ class AuditLogger:
         self.lock = threading.Lock()
         # For in-memory databases we must reuse a single connection because
         # each sqlite3.connect(":memory:") call creates a brand-new database.
+        # check_same_thread=False is safe here because the in-memory path is
+        # used for testing only; production uses file-based SQLite with
+        # threading.Lock() for synchronisation.
         self._conn: Optional[sqlite3.Connection] = (
             sqlite3.connect(":memory:", check_same_thread=False)
             if db_path == ":memory:"
@@ -182,14 +185,16 @@ class AuditLogger:
 
     def export_csv(self, output_path: Union[str, Path]) -> None:
         """Export all logs to a CSV file."""
+        from dataclasses import asdict
         logs = self.get_log_entries(limit=10000)
         with open(output_path, "w", newline="") as f:
             if not logs:
                 return
-            writer = csv.DictWriter(f, fieldnames=logs[0].__dataclass_fields__.keys())
+            first = asdict(logs[0])
+            writer = csv.DictWriter(f, fieldnames=list(first.keys()))
             writer.writeheader()
             for log in logs:
-                data = log.__dict__.copy()
+                data = asdict(log)
                 data["matched_rules"] = json.dumps(data["matched_rules"])
                 data["metadata"] = json.dumps(data["metadata"])
                 writer.writerow(data)

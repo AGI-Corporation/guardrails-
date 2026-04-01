@@ -39,6 +39,8 @@ class FeedbackStore:
     def __init__(self, db_path: str = "feedback.db"):
         self.db_path = db_path
         # For in-memory databases, reuse a single persistent connection.
+        # check_same_thread=False is safe here because FeedbackStore is
+        # single-threaded by design; the in-memory path is used for testing only.
         self._conn: Optional[sqlite3.Connection] = (
             sqlite3.connect(":memory:", check_same_thread=False)
             if db_path == ":memory:"
