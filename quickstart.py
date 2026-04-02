@@ -28,7 +28,7 @@ def main():
   12. Demo - Penetration Test Agent
   13. Exit
 """)
-        choice = input("Enter choice (1-12): ").strip()
+        choice = input("Enter choice (1-13): ").strip()
 
         if choice == "1":
             from guardrail_framework import GuardrailEngine, create_default_guardrails
