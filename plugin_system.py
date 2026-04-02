@@ -213,3 +213,36 @@ def create_default_plugin_engine() -> PluginEngine:
     engine.register(RepetitionPlugin())
     engine.register(LengthPlugin())
     return engine
+
+
+class PluginManager:
+    """
+    High-level façade used by ``quickstart.py`` and external callers.
+
+    Wraps a ``PluginEngine`` and wires it to an optional ``GuardrailEngine``
+    so that plugin results can inform guardrail decisions.
+    """
+
+    def __init__(self, guardrail_engine=None) -> None:
+        self._plugin_engine = create_default_plugin_engine()
+        self._guardrail_engine = guardrail_engine
+
+    def register(self, plugin: GuardrailPlugin) -> None:
+        """Register a plugin with the underlying engine."""
+        self._plugin_engine.register(plugin)
+
+    def unregister(self, name: str) -> None:
+        self._plugin_engine.unregister(name)
+
+    def list_plugins(self) -> List[str]:
+        """Return names of all registered plugins."""
+        return list(self._plugin_engine.plugins.keys())
+
+    def evaluate(self, text: str, context: Optional[Dict] = None) -> List[PluginResult]:
+        """Run all plugins against *text* and return their results."""
+        return self._plugin_engine.evaluate_all(text, context)
+
+    def get_final_action(self, text: str, context: Optional[Dict] = None) -> str:
+        """Convenience method: evaluate and return the most restrictive action."""
+        results = self.evaluate(text, context)
+        return self._plugin_engine.get_final_action(results)
