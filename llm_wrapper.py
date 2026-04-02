@@ -149,7 +149,7 @@ class GuardedLLM:
 
         # ─ 1. Check input ──────────────────────────────────────────────────
         input_result = self.engine.evaluate(request.prompt)
-        if input_result.action == "block":
+        if input_result.action.value == "block":
             self.stats["input_blocked"] += 1
             return GuardedLLMResult(
                 request=request,
@@ -168,7 +168,7 @@ class GuardedLLM:
 
         # ─ 3. Check output ───────────────────────────────────────────────
         output_result = self.engine.evaluate(llm_response.text)
-        if output_result.action == "block":
+        if output_result.action.value == "block":
             self.stats["output_blocked"] += 1
             return GuardedLLMResult(
                 request=request,

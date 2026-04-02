@@ -216,3 +216,87 @@ def create_feedback_entry(
         expected_action=expected,
         comment=comment,
     )
+
+
+class FeedbackLoop:
+    """
+    High-level façade used by ``quickstart.py`` and external callers.
+
+    Records guardrail outcomes for continuous learning and exposes aggregate
+    statistics.  Uses ``FeedbackStore`` for persistence and
+    ``TuningSuggester`` for analysis.
+    """
+
+    def __init__(self, engine=None, db_path: str = "feedback.db") -> None:
+        self._engine = engine
+        self._store = FeedbackStore(db_path=db_path)
+        self._suggester = TuningSuggester(self._store)
+
+    def record(
+        self,
+        text: str,
+        action_taken: str,
+        matched_rules: Optional[List[str]] = None,
+        *,
+        user_id: Optional[str] = None,
+        comment: str = "",
+    ) -> None:
+        """Record a guardrail decision for future analysis."""
+        matched_rules = matched_rules or []
+        if action_taken == "block":
+            fb_type = FeedbackType.CORRECT_BLOCK
+        else:
+            fb_type = FeedbackType.CORRECT_ALLOW
+
+        entry = FeedbackEntry(
+            id=None,
+            timestamp=datetime.now().isoformat(),
+            text=text,
+            original_action=action_taken,
+            feedback_type=fb_type,
+            user_id=user_id,
+            matched_rules=matched_rules,
+            expected_action=action_taken,
+            comment=comment,
+        )
+        self._store.add(entry)
+
+    def submit_correction(
+        self,
+        text: str,
+        action_taken: str,
+        was_correct: bool,
+        matched_rules: Optional[List[str]] = None,
+        user_id: Optional[str] = None,
+        comment: str = "",
+    ) -> None:
+        """Submit a human correction (false positive / false negative)."""
+        matched_rules = matched_rules or []
+        if was_correct:
+            fb_type = (
+                FeedbackType.CORRECT_BLOCK if action_taken == "block"
+                else FeedbackType.CORRECT_ALLOW
+            )
+        else:
+            fb_type = (
+                FeedbackType.FALSE_POSITIVE if action_taken == "block"
+                else FeedbackType.FALSE_NEGATIVE
+            )
+        entry = create_feedback_entry(
+            text=text,
+            original_action=action_taken,
+            feedback_type=fb_type,
+            matched_rules=matched_rules,
+            user_id=user_id,
+            comment=comment,
+        )
+        self._store.add(entry)
+
+    def get_stats(self) -> Dict:
+        """Return aggregate feedback statistics."""
+        return self._store.get_stats()
+
+    def get_tuning_report(self) -> str:
+        """Return a human-readable tuning report with keyword / rule suggestions."""
+        return self._suggester.generate_report()
+
