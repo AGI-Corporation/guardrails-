@@ -25,7 +25,8 @@ def main():
   9.  Demo - Performance Profiler
   10. Demo - Plugin System
   11. Export Audit Logs to CSV
-  12. Exit
+  12. Demo - Penetration Test Agent
+  13. Exit
 """)
         choice = input("Enter choice (1-12): ").strip()
 
@@ -86,11 +87,14 @@ def main():
             print("\nLogs exported to audit_export.csv")
 
         elif choice == "12":
+            _demo_penetration_agent()
+
+        elif choice == "13":
             print("Goodbye!")
             sys.exit(0)
 
         else:
-            print("Invalid choice. Please enter 1-12.")
+            print("Invalid choice. Please enter 1-13.")
 
 
 def _run_tests():
@@ -249,7 +253,7 @@ def _demo_integration():
 
     # --- Audit summary ---
     logs = logger.get_logs(limit=len(test_inputs))
-    blocked = sum(1 for lg in logs if lg.get("action_taken") == "block")
+    blocked = sum(1 for lg in logs if lg.action_taken == "block")
     print(f"\n  Audit: {len(logs)} events logged, {blocked} blocked")
 
     # --- Feedback / learning summary ---
@@ -350,6 +354,31 @@ def _demo_plugin_system():
 
     print("\n  Plugin system ready. Drop .py plugin files into the plugins/ directory.")
     print("=" * 55)
+
+
+def _demo_penetration_agent():
+    """Demo: run the full PenetrationTestAgent and print the Markdown report."""
+    from penetration_test_agent import PenetrationTestAgent, PenTestSession
+
+    print("\n" + "=" * 60)
+    print("  DEMO: Penetration Test Agent")
+    print("=" * 60)
+    print("\n  Running full adversarial suite through all integration layers…\n")
+
+    session = PenTestSession(
+        name="quickstart-demo",
+        description="Quickstart demo pentest session",
+        include_plugins=True,
+        audit_db_path="pentest_audit.db",
+        feedback_db_path="pentest_feedback.db",
+    )
+
+    agent = PenetrationTestAgent()
+    report = agent.run(session)
+
+    print(report.to_markdown())
+    print("\n  To export: report.save_json('report.json') or report.export_csv('report.csv')")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
