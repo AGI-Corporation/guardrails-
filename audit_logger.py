@@ -41,12 +41,23 @@ class AuditLogger:
     def __init__(self, db_path: str = "audit_log.db"):
         self.db_path = db_path
         self.lock = threading.Lock()
+        # In-memory SQLite databases are not shared across connections, so we
+        # keep a single persistent connection for :memory: usage (e.g. tests).
+        self._conn: Optional[sqlite3.Connection] = None
+        if db_path == ":memory:":
+            self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._init_db()
+
+    def _connect(self) -> sqlite3.Connection:
+        """Return the appropriate SQLite connection."""
+        if self._conn is not None:
+            return self._conn
+        return sqlite3.connect(self.db_path)
 
     def _init_db(self):
         """Initialize SQLite database with required schema."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
+        conn = self._connect()
+        conn.execute("""
                 CREATE TABLE IF NOT EXISTS audit_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp TEXT NOT NULL,
@@ -60,7 +71,10 @@ class AuditLogger:
                     metadata TEXT
                 )
             """)
-            conn.commit()
+        conn.commit()
+        # Close only file-based connections opened for init
+        if self._conn is None:
+            conn.close()
 
     def log(self, entry: Optional[AuditEntry] = None, **kwargs) -> int:
         """Log a new audit entry to the database.
@@ -71,9 +85,9 @@ class AuditLogger:
         if entry is None:
             entry = AuditEntry(**kwargs)
         with self.lock:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
+            conn = self._connect()
+            cursor = conn.cursor()
+            cursor.execute("""
                     INSERT INTO audit_log (
                         timestamp, input_text, action_taken, matched_rules, 
                         severity, risk_score, user_id, session_id, metadata
@@ -89,30 +103,39 @@ class AuditLogger:
                     entry.session_id,
                     json.dumps(entry.metadata)
                 ))
-                conn.commit()
-                return cursor.lastrowid
+            conn.commit()
+            row_id = cursor.lastrowid
+            if self._conn is None:
+                conn.close()
+            return row_id
 
     def get_logs(self, limit: int = 100, offset: int = 0) -> List[AuditEntry]:
         """Retrieve paginated audit logs."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT ? OFFSET ?",
-                (limit, offset)
-            )
-            return [self._row_to_entry(row) for row in cursor.fetchall()]
+        conn = self._connect()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+            (limit, offset)
+        )
+        rows = [self._row_to_entry(row) for row in cursor.fetchall()]
+        if self._conn is None:
+            conn.close()
+        return rows
 
     def search(self, query: str) -> List[AuditEntry]:
         """Search logs by input text or action."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT * FROM audit_log WHERE input_text LIKE ? OR action_taken LIKE ? ORDER BY timestamp DESC",
-                (f"%{query}%", f"%{query}%")
-            )
-            return [self._row_to_entry(row) for row in cursor.fetchall()]
+        conn = self._connect()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM audit_log WHERE input_text LIKE ? OR action_taken LIKE ? ORDER BY timestamp DESC",
+            (f"%{query}%", f"%{query}%")
+        )
+        rows = [self._row_to_entry(row) for row in cursor.fetchall()]
+        if self._conn is None:
+            conn.close()
+        return rows
 
     def export_csv(self, output_path: Union[str, Path]):
         """Export all logs to a CSV file."""

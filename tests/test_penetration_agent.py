@@ -343,3 +343,31 @@ class TestCustomSeeds:
         custom_report = agent.run(custom_session)
 
         assert custom_report.total_attacks > base_report.total_attacks
+
+
+# ── Default session (session=None path) ───────────────────────────────────────
+
+class TestDefaultSession:
+    def test_run_with_no_session_uses_defaults(self):
+        """Calling agent.run() with no session should use PenTestSession defaults."""
+        from guardrail_framework import GuardrailEngine, create_default_guardrails
+        engine = GuardrailEngine()
+        for r in create_default_guardrails():
+            engine.add_rule(r)
+        agent = PenetrationTestAgent(engine=engine)
+        # This hits line 294: session = PenTestSession()
+        report = agent.run()
+        assert report is not None
+        assert report.total_attacks > 0
+        assert report.started_at != ""
+        assert report.finished_at != ""
+
+    def test_run_with_none_explicitly(self):
+        """Passing None explicitly is equivalent to passing no session."""
+        from guardrail_framework import GuardrailEngine, create_default_guardrails
+        engine = GuardrailEngine()
+        for r in create_default_guardrails():
+            engine.add_rule(r)
+        agent = PenetrationTestAgent(engine=engine)
+        report = agent.run(None)
+        assert isinstance(report, PenTestReport)

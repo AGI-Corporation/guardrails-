@@ -379,3 +379,53 @@ class TestPentestIntegration:
         r = reporter.generate(ComplianceFramework.HIPAA)
         risk_ctrl = next(c for c in r.controls if "308(a)(1)" in c.control_id)
         assert risk_ctrl.status == ControlStatus.PARTIAL
+
+
+# ── _engine_has_keywords ──────────────────────────────────────────────────────
+
+class TestEngineHasKeywords:
+    """Tests for the _engine_has_keywords helper used internally by reporters."""
+
+    def _make_reporter_with_engine(self, keywords=None, patterns=None):
+        from guardrail_framework import GuardrailEngine, GuardrailRule, Severity, Action
+        engine = GuardrailEngine()
+        engine.add_rule(GuardrailRule(
+            id="test_kw",
+            name="Test KW",
+            severity=Severity.HIGH,
+            action=Action.BLOCK,
+            keywords=keywords or [],
+            patterns=patterns or [],
+        ))
+        logger = AuditLogger(":memory:")
+        return ComplianceReporter(audit_logger=logger, engine=engine)
+
+    def test_keyword_found_via_kw(self):
+        reporter = self._make_reporter_with_engine(keywords=["injection"])
+        assert reporter._engine_has_keywords(["inject"]) is True
+
+    def test_keyword_not_found(self):
+        reporter = self._make_reporter_with_engine(keywords=["safe"])
+        assert reporter._engine_has_keywords(["ssn", "pii"]) is False
+
+    def test_keyword_found_via_pattern(self):
+        reporter = self._make_reporter_with_engine(patterns=[r"\bssn\b"])
+        assert reporter._engine_has_keywords(["ssn"]) is True
+
+    def test_no_engine_returns_false(self):
+        logger = AuditLogger(":memory:")
+        reporter = ComplianceReporter(audit_logger=logger, engine=None)
+        assert reporter._engine_has_keywords(["anything"]) is False
+
+    def test_case_insensitive_kw_match(self):
+        reporter = self._make_reporter_with_engine(keywords=["INJECTION"])
+        assert reporter._engine_has_keywords(["injection"]) is True
+
+    def test_partial_kw_match(self):
+        # "inject" is substring of "injection"
+        reporter = self._make_reporter_with_engine(keywords=["injection"])
+        assert reporter._engine_has_keywords(["inject"]) is True
+
+    def test_pattern_substring_match(self):
+        reporter = self._make_reporter_with_engine(patterns=[r"credit_card_number"])
+        assert reporter._engine_has_keywords(["credit"]) is True

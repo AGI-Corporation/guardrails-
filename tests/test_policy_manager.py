@@ -530,3 +530,220 @@ class TestWriteExampleConfig:
         path = str(tmp_path / "config.yaml")
         write_example_config(path)
         assert "guardrails:" in open(path).read()
+
+
+# ── load_json_string ──────────────────────────────────────────────────────────
+
+class TestLoadJsonString:
+    def test_valid_json_string(self):
+        import json
+        pm = PolicyManager()
+        raw = {"guardrails": [_MINIMAL_RULE]}
+        config = pm.load_json_string(json.dumps(raw))
+        assert len(config.guardrails) == 1
+        assert config.guardrails[0].id == "test_ssn"
+
+    def test_invalid_json_raises(self):
+        pm = PolicyManager()
+        with pytest.raises(PolicyValidationError, match="Invalid JSON"):
+            pm.load_json_string("{ not valid json")
+
+    def test_result_applied_to_engine(self):
+        import json
+        engine = GuardrailEngine()
+        pm = PolicyManager(engine=engine)
+        pm.load_json_string(json.dumps({"guardrails": [_MINIMAL_RULE]}))
+        assert "test_ssn" in engine.rules
+
+
+# ── save() error paths ────────────────────────────────────────────────────────
+
+class TestSaveErrors:
+    def test_save_without_loaded_config_raises(self, tmp_path):
+        pm = PolicyManager()
+        with pytest.raises(RuntimeError, match="No policy config loaded"):
+            pm.save(str(tmp_path / "out.json"))
+
+    def test_save_with_explicit_config(self, tmp_path):
+        pm = PolicyManager()
+        config = pm.load_dict(_MINIMAL_POLICY)
+        save_path = str(tmp_path / "explicit.json")
+        pm.save(save_path, config=config)
+        import json, os
+        assert os.path.exists(save_path)
+        data = json.loads(open(save_path).read())
+        assert "guardrails" in data
+
+
+# ── apply_to_engine error paths ───────────────────────────────────────────────
+
+class TestApplyToEngineErrors:
+    def test_apply_without_loaded_config_raises(self):
+        pm = PolicyManager()
+        engine = GuardrailEngine()
+        with pytest.raises(RuntimeError, match="No policy config loaded"):
+            pm.apply_to_engine(engine)
+
+
+# ── build_rate_limiter edge cases ─────────────────────────────────────────────
+
+class TestBuildRateLimiterEdges:
+    def test_unknown_algorithm_raises_validation_error(self):
+        from policy_manager import RateLimitingConfig, PolicyValidationError as PVE
+        pm = PolicyManager()
+        # Manually inject an invalid algorithm bypassing validation
+        config = pm.load_dict({
+            "guardrails": [_MINIMAL_RULE],
+            "rate_limiting": {"enabled": True, "algorithm": "token_bucket"},
+        })
+        # Override algorithm to an unknown value after load (bypasses validator)
+        config.rate_limiting.algorithm = "unknown_algo"
+        with pytest.raises(PVE, match="Unknown algorithm"):
+            pm.build_rate_limiter(config=config)
+
+
+# ── Non-dict sub-config validation ────────────────────────────────────────────
+
+class TestSubConfigValidation:
+    def test_guardrails_not_list_raises(self):
+        pm = PolicyManager()
+        with pytest.raises(PolicyValidationError, match="must be a list"):
+            pm.load_dict({"guardrails": "not a list"})
+
+    def test_rule_not_dict_raises(self):
+        pm = PolicyManager()
+        with pytest.raises(PolicyValidationError, match="must be a dict"):
+            pm.load_dict({"guardrails": ["not a dict"]})
+
+    def test_rule_name_not_string_raises(self):
+        pm = PolicyManager()
+        with pytest.raises(PolicyValidationError, match="'name' must be a string"):
+            pm.load_dict({"guardrails": [
+                {"id": "r1", "name": 123, "severity": "high",
+                 "action": "block", "keywords": ["x"]}
+            ]})
+
+    def test_rule_enabled_not_bool_raises(self):
+        pm = PolicyManager()
+        with pytest.raises(PolicyValidationError, match="'enabled' must be a boolean"):
+            pm.load_dict({"guardrails": [
+                {"id": "r1", "severity": "high", "action": "block",
+                 "keywords": ["x"], "enabled": "yes"}
+            ]})
+
+    def test_llm_not_dict_raises(self):
+        pm = PolicyManager()
+        with pytest.raises(PolicyValidationError, match="'llm' must be a dict"):
+            pm.load_dict({"guardrails": [_MINIMAL_RULE], "llm": "bad"})
+
+    def test_audit_not_dict_raises(self):
+        pm = PolicyManager()
+        with pytest.raises(PolicyValidationError, match="'audit' must be a dict"):
+            pm.load_dict({"guardrails": [_MINIMAL_RULE], "audit": 42})
+
+    def test_profiling_not_dict_raises(self):
+        pm = PolicyManager()
+        with pytest.raises(PolicyValidationError, match="'profiling' must be a dict"):
+            pm.load_dict({"guardrails": [_MINIMAL_RULE], "profiling": True})
+
+    def test_rate_limiting_not_dict_raises(self):
+        pm = PolicyManager()
+        with pytest.raises(PolicyValidationError, match="'rate_limiting' must be a dict"):
+            pm.load_dict({"guardrails": [_MINIMAL_RULE], "rate_limiting": "nope"})
+
+    def test_pattern_not_string_raises(self):
+        pm = PolicyManager()
+        with pytest.raises(PolicyValidationError, match="must be a string"):
+            pm.load_dict({"guardrails": [
+                {"id": "r1", "severity": "high", "action": "block",
+                 "patterns": [123]}
+            ]})
+
+    def test_keyword_not_string_raises(self):
+        pm = PolicyManager()
+        with pytest.raises(PolicyValidationError, match="must be a string"):
+            pm.load_dict({"guardrails": [
+                {"id": "r1", "severity": "high", "action": "block",
+                 "patterns": [], "keywords": [456]}
+            ]})
+
+
+# ── YAML parsing (requires PyYAML) ────────────────────────────────────────────
+
+class TestYAMLParsing:
+    def test_load_valid_yaml(self, tmp_path):
+        yaml_content = """\
+guardrails:
+  - id: yaml_rule
+    name: YAML Rule
+    severity: high
+    action: block
+    keywords:
+      - injection
+"""
+        p = tmp_path / "policy.yaml"
+        p.write_text(yaml_content)
+        try:
+            pm = PolicyManager()
+            config = pm.load(str(p))
+            assert len(config.guardrails) == 1
+            assert config.guardrails[0].id == "yaml_rule"
+        except ImportError:
+            pytest.skip("PyYAML not installed")
+
+    def test_empty_yaml_returns_empty_policy(self, tmp_path):
+        p = tmp_path / "empty.yaml"
+        p.write_text("")
+        try:
+            pm = PolicyManager()
+            config = pm.load(str(p))
+            assert config.guardrails == []
+        except ImportError:
+            pytest.skip("PyYAML not installed")
+
+    def test_invalid_yaml_raises_validation_error(self, tmp_path):
+        p = tmp_path / "bad.yaml"
+        p.write_text("guardrails: [: invalid yaml")
+        try:
+            pm = PolicyManager()
+            with pytest.raises(PolicyValidationError, match="parse"):
+                pm.load(str(p))
+        except ImportError:
+            pytest.skip("PyYAML not installed")
+
+    def test_yaml_import_error_raises(self, tmp_path, monkeypatch):
+        """When PyYAML is not installed, loading a YAML file raises ImportError."""
+        import builtins
+        real_import = builtins.__import__
+        def mock_import(name, *args, **kwargs):
+            if name == "yaml":
+                raise ImportError("no yaml")
+            return real_import(name, *args, **kwargs)
+        monkeypatch.setattr(builtins, "__import__", mock_import)
+
+        p = tmp_path / "policy.yaml"
+        p.write_text("guardrails: []")
+        pm = PolicyManager()
+        with pytest.raises(ImportError, match="PyYAML"):
+            pm.load(str(p))
+
+    def test_yaml_non_mapping_raises(self, tmp_path):
+        p = tmp_path / "list.yaml"
+        p.write_text("- item1\n- item2\n")
+        try:
+            pm = PolicyManager()
+            with pytest.raises(PolicyValidationError, match="mapping"):
+                pm.load(str(p))
+        except ImportError:
+            pytest.skip("PyYAML not installed")
+
+
+# ── JSON list (non-object root) ───────────────────────────────────────────────
+
+class TestJsonNonObjectRoot:
+    def test_json_array_root_raises(self, tmp_path):
+        p = tmp_path / "list.json"
+        p.write_text("[1, 2, 3]")
+        pm = PolicyManager()
+        with pytest.raises(PolicyValidationError, match="must contain an object"):
+            pm.load(str(p))

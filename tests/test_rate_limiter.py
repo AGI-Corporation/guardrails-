@@ -400,3 +400,72 @@ class TestHelpers:
         lim.check("k")
         lim.check("k")
         assert lim.check("k").allowed is False
+
+
+# ── SlidingWindow: time-based eviction ───────────────────────────────────────
+
+class TestSlidingWindowEviction:
+    """Test that expired timestamps are correctly evicted (covers line 252)."""
+
+    def test_slots_freed_after_window_expires(self):
+        import time
+        lim = SlidingWindowLimiter(max_requests=2, window_s=0.1)
+        # Exhaust the window
+        lim.check("alice")
+        lim.check("alice")
+        # 4th call should be denied
+        assert lim.check("alice").allowed is False
+        # Wait for the window to expire
+        time.sleep(0.15)
+        # Now a new slot is available
+        assert lim.check("alice").allowed is True
+
+    def test_partial_eviction_allows_some(self):
+        import time
+        lim = SlidingWindowLimiter(max_requests=3, window_s=0.1)
+        lim.check("bob")    # t=0
+        time.sleep(0.08)
+        lim.check("bob")    # t=0.08
+        lim.check("bob")    # t=0.08 — now at limit
+        assert lim.check("bob").allowed is False
+        time.sleep(0.05)    # t=0.13 — first request at t=0 has expired
+        r = lim.check("bob")
+        assert r.allowed is True  # one slot freed
+
+
+# ── CompositeRateLimiter per-key reset ───────────────────────────────────────
+
+class TestCompositeReset:
+    def test_reset_key_restores_per_key(self):
+        bucket = TokenBucketLimiter(capacity=1, refill_rate=0.001)
+        lim = CompositeRateLimiter([bucket])
+        lim.check("alice")     # exhaust
+        assert lim.check("alice").allowed is False
+        lim.reset("alice")
+        assert lim.check("alice").allowed is True
+
+    def test_reset_key_does_not_affect_other_keys(self):
+        bucket = TokenBucketLimiter(capacity=1, refill_rate=0.001)
+        lim = CompositeRateLimiter([bucket])
+        lim.check("alice")
+        lim.check("bob")
+        lim.reset("alice")    # only alice reset
+        assert lim.check("alice").allowed is True
+        assert lim.check("bob").allowed is False
+
+
+# ── RateLimitMiddleware: fallthrough unknown on_limit ────────────────────────
+
+class TestMiddlewareFallthrough:
+    def test_unknown_on_limit_string_still_raises(self):
+        """Any on_limit value that isn't 'raise', 'return_none', or callable
+        falls through to the RateLimitExceeded raise at line 397."""
+        lim = TokenBucketLimiter(capacity=1, refill_rate=0.001)
+        mw = RateLimitMiddleware(
+            fn=lambda x: x,
+            limiter=lim,
+            on_limit="invalid_sentinel",   # not "raise" or "return_none", not callable
+        )
+        mw("first")   # consume the single token
+        with pytest.raises(RateLimitExceeded):
+            mw("second")

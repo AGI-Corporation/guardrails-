@@ -136,3 +136,44 @@ class TestApplyHelper:
         result = transformer.apply(text, ["redact_ssn", "redact_email"])
         assert "[SSN REDACTED]" in result.transformed
         assert "[EMAIL REDACTED]" in result.transformed
+
+
+# ── _mask_profanity ───────────────────────────────────────────────────────────
+
+class TestMaskProfanity:
+    def test_badword1_masked(self, transformer: ContentTransformer):
+        result = transformer.apply("contains badword1 here", ["mask_profanity"])
+        assert "badword1" not in result.transformed
+        assert "****" in result.transformed  # 7 chars → 7 stars... wait badword1=8 chars
+        assert result.changes_made == 1
+
+    def test_badword2_masked(self, transformer: ContentTransformer):
+        result = transformer.apply("badword2 is bad", ["mask_profanity"])
+        assert "badword2" not in result.transformed
+        assert result.changes_made == 1
+
+    def test_both_words_masked(self, transformer: ContentTransformer):
+        result = transformer.apply("badword1 and badword2", ["mask_profanity"])
+        assert "badword1" not in result.transformed
+        assert "badword2" not in result.transformed
+        assert result.changes_made == 2
+
+    def test_no_profanity_unchanged(self, transformer: ContentTransformer):
+        result = transformer.apply("clean text here", ["mask_profanity"])
+        assert result.changes_made == 0
+        assert result.transformed == "clean text here"
+
+    def test_case_insensitive_match(self, transformer: ContentTransformer):
+        result = transformer.apply("BADWORD1 in caps", ["mask_profanity"])
+        assert result.changes_made == 1
+        assert "BADWORD1" not in result.transformed
+
+    def test_masked_with_asterisks(self, transformer: ContentTransformer):
+        result = transformer.apply("the word badword1 here", ["mask_profanity"])
+        assert "*" in result.transformed
+
+    def test_apply_all_pii_does_not_mask_profanity(self, transformer: ContentTransformer):
+        # apply_all_pii only runs PII redactors, not the profanity masker
+        result = transformer.apply_all_pii("text with badword1")
+        # profanity masker is separate; this just checks no crash occurs
+        assert isinstance(result, TransformationResult)

@@ -16,6 +16,12 @@ def logger(tmp_path) -> AuditLogger:
     return AuditLogger(db_path=str(tmp_path / "test_audit.db"))
 
 
+@pytest.fixture()
+def memory_logger() -> AuditLogger:
+    """AuditLogger backed by an in-memory SQLite database."""
+    return AuditLogger(db_path=":memory:")
+
+
 # ── log() — both signatures ───────────────────────────────────────────────────
 
 class TestLog:
@@ -160,3 +166,67 @@ class TestAuditEntryDefaults:
     def test_metadata_default_empty(self):
         entry = AuditEntry(input_text="x", action_taken="allow")
         assert entry.metadata == {}
+
+
+# ── In-memory database ────────────────────────────────────────────────────────
+
+class TestInMemoryDatabase:
+    """Verify AuditLogger works correctly with db_path=':memory:'."""
+
+    def test_log_and_retrieve(self, memory_logger: AuditLogger):
+        row_id = memory_logger.log(
+            input_text="in-memory test",
+            action_taken="allow",
+            matched_rules=[],
+            severity="low",
+        )
+        assert row_id == 1
+        logs = memory_logger.get_logs()
+        assert len(logs) == 1
+        assert logs[0].input_text == "in-memory test"
+
+    def test_multiple_logs_persisted(self, memory_logger: AuditLogger):
+        for i in range(5):
+            memory_logger.log(input_text=f"msg{i}", action_taken="allow",
+                              matched_rules=[], severity="low")
+        logs = memory_logger.get_logs()
+        assert len(logs) == 5
+
+    def test_search_works(self, memory_logger: AuditLogger):
+        memory_logger.log(input_text="needle in haystack", action_taken="block",
+                          matched_rules=[], severity="high")
+        memory_logger.log(input_text="nothing here", action_taken="allow",
+                          matched_rules=[], severity="low")
+        results = memory_logger.search("needle")
+        assert len(results) == 1
+
+    def test_entry_object_works(self, memory_logger: AuditLogger):
+        entry = AuditEntry(
+            input_text="entry obj",
+            action_taken="block",
+            matched_rules=["r1"],
+            severity="critical",
+        )
+        rid = memory_logger.log(entry)
+        assert rid is not None
+        logs = memory_logger.get_logs()
+        assert logs[0].matched_rules == ["r1"]
+
+    def test_empty_db_returns_empty_list(self, memory_logger: AuditLogger):
+        assert memory_logger.get_logs() == []
+
+    def test_different_instances_are_independent(self):
+        a = AuditLogger(":memory:")
+        b = AuditLogger(":memory:")
+        a.log(input_text="only in a", action_taken="allow",
+               matched_rules=[], severity="low")
+        assert len(b.get_logs()) == 0
+        assert len(a.get_logs()) == 1
+
+    def test_log_returns_incrementing_row_ids(self, memory_logger: AuditLogger):
+        id1 = memory_logger.log(input_text="a", action_taken="allow",
+                                matched_rules=[], severity="low")
+        id2 = memory_logger.log(input_text="b", action_taken="block",
+                                matched_rules=[], severity="high")
+        assert id2 == id1 + 1
+
