@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-009688.svg)](https://fastapi.tiangolo.com/)
 [![Streamlit](https://img.shields.io/badge/Dashboard-Streamlit-FF4B4B.svg)](https://streamlit.io/)
-[![Tests](https://img.shields.io/badge/tests-345%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-454%20passing-brightgreen.svg)](#testing)
 [![AGI Corporation](https://img.shields.io/badge/by-AGI%20Corporation-6f42c1)](https://github.com/AGI-Corporation)
 
 ---
@@ -16,12 +16,13 @@
 
 The **Guardrails Framework** is an open-source AI safety and compliance toolkit built for teams shipping LLM-powered products in 2025 and beyond. As AI regulation accelerates — EU AI Act enforcement, NIST AI RMF adoption, CMMC AI provisions — guardrails are no longer optional. This framework gives you:
 
-- **Policy-as-code** — define content, PII, topic, and custom guardrails in YAML or Python.
+- **Policy-as-code** — define content, PII, topic, and custom guardrails in YAML or Python via `policy_manager.py`.
 - **Adversarial red-teaming** — automated prompt injection, jailbreak, and encoding bypass suites.
 - **Penetration test agent** — single-command end-to-end security pentest with Markdown/JSON/CSV reports.
 - **Compliance reporting** — HIPAA, SOC 2, CMMC, and GDPR reports generated directly from your audit trail.
 - **Immutable audit logs** — risk-scored decision trails suitable for compliance workflows (HIPAA, SOC 2, CMMC).
 - **Threat intelligence plugins** — SQL injection, command injection, prompt leak, jailbreak, and SSRF detection.
+- **Rate limiting** — token-bucket and sliding-window rate limiters with middleware and composite support.
 - **REST API** — drop-in evaluation endpoint for any LLM pipeline or microservice.
 - **Live dashboard** — Streamlit UI for real-time monitoring, live evaluation, adversarial testing, and performance profiling.
 
@@ -33,14 +34,16 @@ The **Guardrails Framework** is an open-source AI safety and compliance toolkit 
 |---|---|
 | `guardrail_framework.py` | Core engine: rules, severity, actions, test runner, CLI |
 | `adversarial_tester.py` | Red-team suite: prompt injection, jailbreaks, encoding bypasses |
-| `penetration_test_agent.py` | **NEW** End-to-end pentest agent orchestrating all components |
-| `compliance_reporter.py` | **NEW** HIPAA / SOC 2 / CMMC / GDPR compliance reports |
+| `penetration_test_agent.py` | End-to-end pentest agent orchestrating all components |
+| `compliance_reporter.py` | HIPAA / SOC 2 / CMMC / GDPR compliance reports |
+| `policy_manager.py` | **NEW** YAML/JSON policy loader — wire rules into engine from config files |
+| `rate_limiter.py` | **NEW** Token-bucket & sliding-window rate limiters with middleware support |
 | `audit_logger.py` | Immutable audit trail with risk scoring and JSON export |
 | `api_server.py` | FastAPI server with `/evaluate`, `/guardrails`, `/pentest`, `/compliance`, `/metrics`, `/health` |
 | `content_transformer.py` | Sanitize, redact, and transform flagged content |
 | `llm_wrapper.py` | Pluggable LLM backend (OpenAI GPT-4o, Anthropic Claude 3.5, custom) |
 | `rag_guardrails.py` | Source validation and context safety for RAG pipelines |
-| `plugin_system.py` | Drop-in plugin architecture — includes entropy, repetition, length, threat intelligence, prompt-leak plugins |
+| `plugin_system.py` | Drop-in plugin architecture — entropy, repetition, length, threat intelligence, prompt-leak |
 | `feedback_loop.py` | Close the loop — learn from guardrail outcomes over time |
 | `performance_profiler.py` | Latency, throughput, and cost profiling per guardrail |
 | `dashboard.py` | 5-page Streamlit dashboard: Overview, Live Evaluator, Audit Log, Adversarial Testing, Performance |
@@ -53,37 +56,42 @@ The **Guardrails Framework** is an open-source AI safety and compliance toolkit 
 ```
 guardrails-/
 ├── .github/
-│   └── ISSUE_TEMPLATE/           # Bug report & feature request templates
+│   └── ISSUE_TEMPLATE/              # Bug report & feature request templates
 ├── docs/
-│   └── images/                   # Architecture diagrams and wiki assets
+│   └── images/                      # Architecture diagrams and wiki assets
 ├── tests/
-│   ├── conftest.py               # Shared fixtures
-│   ├── test_adversarial.py       # Adversarial tester tests
-│   ├── test_audit_logger.py      # Audit logger tests
+│   ├── conftest.py                  # Shared fixtures
+│   ├── test_adversarial.py          # Adversarial tester tests
+│   ├── test_audit_logger.py         # Audit logger tests
 │   ├── test_compliance_reporter.py  # Compliance reporter tests
 │   ├── test_content_transformer.py  # Content transformer tests
-│   ├── test_feedback_loop.py     # Feedback loop tests
+│   ├── test_feedback_loop.py        # Feedback loop tests
 │   ├── test_guardrail_framework.py  # Core engine tests
-│   ├── test_llm_wrapper.py       # LLM wrapper tests
-│   ├── test_penetration_agent.py # Penetration test agent tests
+│   ├── test_llm_wrapper.py          # LLM wrapper tests
+│   ├── test_penetration_agent.py    # Penetration test agent tests
 │   ├── test_performance_profiler.py # Performance profiler tests
-│   ├── test_plugin_system.py     # Plugin system tests
-│   └── test_rag_guardrails.py    # RAG guardrails tests
-├── guardrail_framework.py        # Core engine (rules, actions, CLI)
-├── adversarial_tester.py         # Automated red-team test suite
-├── penetration_test_agent.py     # End-to-end pentest orchestrator
-├── compliance_reporter.py        # HIPAA / SOC 2 / CMMC / GDPR reporter
-├── api_server.py                 # FastAPI REST API
-├── audit_logger.py               # Compliance-grade audit logging
-├── content_transformer.py        # Content sanitization and redaction
-├── llm_wrapper.py                # Multi-provider LLM abstraction
-├── rag_guardrails.py             # RAG-specific safety controls
-├── plugin_system.py              # Extensible plugin system
-├── feedback_loop.py              # Continuous improvement feedback
-├── performance_profiler.py       # Latency and cost profiling
-├── dashboard.py                  # 5-page Streamlit dashboard
-├── quickstart.py                 # End-to-end demo (13 modes)
-├── requirements.txt              # Python dependencies
+│   ├── test_plugin_system.py        # Plugin system tests
+│   ├── test_policy_manager.py       # Policy manager tests
+│   ├── test_rag_guardrails.py       # RAG guardrails tests
+│   └── test_rate_limiter.py         # Rate limiter tests
+├── guardrail_framework.py           # Core engine (rules, actions, CLI)
+├── adversarial_tester.py            # Automated red-team test suite
+├── penetration_test_agent.py        # End-to-end pentest orchestrator
+├── compliance_reporter.py           # HIPAA / SOC 2 / CMMC / GDPR reporter
+├── policy_manager.py                # YAML/JSON policy loader
+├── rate_limiter.py                  # Token-bucket & sliding-window rate limiters
+├── api_server.py                    # FastAPI REST API
+├── audit_logger.py                  # Compliance-grade audit logging
+├── content_transformer.py           # Content sanitization and redaction
+├── llm_wrapper.py                   # Multi-provider LLM abstraction
+├── rag_guardrails.py                # RAG-specific safety controls
+├── plugin_system.py                 # Extensible plugin system
+├── feedback_loop.py                 # Continuous improvement feedback
+├── performance_profiler.py          # Latency and cost profiling
+├── dashboard.py                     # 5-page Streamlit dashboard
+├── quickstart.py                    # End-to-end demo (13 modes)
+├── config.yaml                      # Example policy configuration (generated via policy_manager)
+├── requirements.txt                 # Python dependencies
 └── README.md
 ```
 
@@ -195,14 +203,85 @@ python compliance_reporter.py --framework hipaa --json hipaa.json --html hipaa.h
 python compliance_reporter.py --framework all
 ```
 
-### 6. Start the API Server
+### 6. Load Policy from YAML / JSON
+
+```python
+from policy_manager import PolicyManager, write_example_config
+from guardrail_framework import GuardrailEngine
+
+# Write an example config.yaml to disk
+write_example_config("config.yaml")
+
+# Load and apply to engine
+engine = GuardrailEngine()
+pm     = PolicyManager(engine=engine)
+config = pm.load("config.yaml")
+print(f"Loaded {len(config.active_rules)} rules from config.yaml")
+
+# Or load inline from a dict
+from policy_manager import load_policy_dict
+
+config = load_policy_dict({
+    "guardrails": [
+        {"id": "ssn", "name": "SSN", "severity": "critical",
+         "action": "block", "patterns": [r"\d{3}-\d{2}-\d{4}"]}
+    ],
+    "rate_limiting": {"enabled": True, "algorithm": "token_bucket", "capacity": 60}
+}, engine=engine)
+
+# Build the rate limiter configured in the policy
+limiter = pm.build_rate_limiter()
+```
+
+Or from the command line:
+
+```bash
+# Validate a policy file
+python policy_manager.py load config.yaml
+
+# Write an example config
+python policy_manager.py init --output config.yaml
+```
+
+### 7. Rate Limiting
+
+```python
+from rate_limiter import TokenBucketLimiter, SlidingWindowLimiter, RateLimitMiddleware, RateLimitExceeded
+from guardrail_framework import GuardrailEngine, create_default_guardrails
+
+engine = GuardrailEngine()
+for rule in create_default_guardrails():
+    engine.add_rule(rule)
+
+# Token-bucket: 60 request burst, refills at 1 req/s
+limiter = TokenBucketLimiter(capacity=60, refill_rate=1.0)
+
+# Sliding-window: strict 30 requests per minute
+# limiter = SlidingWindowLimiter(max_requests=30, window_s=60.0)
+
+# Wrap guardrail evaluation with rate limiting
+protected = RateLimitMiddleware(
+    fn=engine.evaluate,
+    limiter=limiter,
+    key_fn=lambda text: "global",   # use user_id in production
+)
+
+try:
+    result = protected("hello world")
+except RateLimitExceeded as e:
+    print(f"Too many requests. Retry after {e.retry_after_s:.1f}s")
+
+print(f"Hit rate: {protected.hit_rate:.1%}")
+```
+
+### 8. Start the API Server
 
 ```bash
 uvicorn api_server:app --reload --port 8000
 # Swagger UI -> http://localhost:8000/docs
 ```
 
-### 7. Launch the Dashboard
+### 9. Launch the Dashboard
 
 ```bash
 streamlit run dashboard.py
@@ -456,7 +535,7 @@ GUARDRAILS_SECRET_KEY=your-secret-key
 ## Testing
 
 ```bash
-# Run all 345 tests
+# Run all 454 tests
 pytest tests/ -v
 
 # With coverage report
@@ -467,6 +546,8 @@ pytest tests/test_adversarial.py -v
 pytest tests/test_penetration_agent.py -v
 pytest tests/test_compliance_reporter.py -v
 pytest tests/test_plugin_system.py -v
+pytest tests/test_policy_manager.py -v
+pytest tests/test_rate_limiter.py -v
 
 # Run built-in framework tests
 python -c "
@@ -480,6 +561,103 @@ print(ReportGenerator().generate(e.run_tests()))
 
 ---
 
+## Policy Manager
+
+Load guardrail rules, LLM settings, audit config, and rate-limiting from a YAML or JSON file. Supports environment variable expansion (`${VAR_NAME}`).
+
+```yaml
+# config.yaml
+guardrails:
+  - id: "pii_ssn"
+    name: "SSN Detection"
+    severity: "critical"
+    action: "block"
+    patterns: ["\\d{3}-\\d{2}-\\d{4}"]
+    enabled: true
+
+llm:
+  provider: "openai"
+  model: "gpt-4o"
+  api_key: "${OPENAI_API_KEY}"
+
+audit:
+  enabled: true
+  retention_days: 90
+  db_path: "./audit_log.db"
+
+rate_limiting:
+  enabled: true
+  algorithm: "token_bucket"   # token_bucket | sliding_window
+  capacity: 60
+  refill_rate: 1.0
+```
+
+```python
+from policy_manager import PolicyManager, write_example_config
+from guardrail_framework import GuardrailEngine
+
+write_example_config("config.yaml")   # generate a starter template
+
+engine = GuardrailEngine()
+pm     = PolicyManager(engine=engine)
+config = pm.load("config.yaml")
+print(f"{len(config.active_rules)} rules loaded, compliant: {config.to_dict()}")
+
+# Build rate limiter from policy
+limiter = pm.build_rate_limiter()     # None if rate_limiting.enabled = false
+```
+
+Validation catches: invalid severities/actions, duplicate rule IDs, bad regex patterns, unknown providers/algorithms.
+
+---
+
+## Rate Limiter
+
+Two algorithms:
+
+| Algorithm | Best for | Burst | Config |
+|---|---|---|---|
+| `TokenBucketLimiter` | API endpoints, per-user quotas | ✅ Allowed | `capacity`, `refill_rate` |
+| `SlidingWindowLimiter` | Strict request count enforcement | ❌ No burst | `max_requests`, `window_s` |
+
+```python
+from rate_limiter import (
+    TokenBucketLimiter, SlidingWindowLimiter,
+    CompositeRateLimiter, RateLimitMiddleware,
+    create_default_limiter, create_strict_limiter,
+)
+
+# Token bucket — 60-request burst, 1 req/s refill
+bucket = TokenBucketLimiter(capacity=60, refill_rate=1.0)
+
+# Sliding window — strict 30 req/min
+window = SlidingWindowLimiter(max_requests=30, window_s=60.0)
+
+# AND-composition: BOTH must allow
+combined = CompositeRateLimiter([bucket, window])
+
+# Direct check (non-raising)
+result = combined.check("user-alice")
+print(result.allowed, result.remaining, result.retry_after_s)
+
+# Middleware wrapping any callable
+from guardrail_framework import GuardrailEngine, create_default_guardrails
+engine = GuardrailEngine()
+for r in create_default_guardrails():
+    engine.add_rule(r)
+
+protected_eval = RateLimitMiddleware(
+    fn=engine.evaluate,
+    limiter=bucket,
+    key_fn=lambda text: "global",
+    on_limit="raise",    # or "return_none" or a callable fallback
+)
+result = protected_eval("hello world")
+print(protected_eval.stats())  # {"total_requests": 1, "rate_limit_hits": 0, "hit_rate": 0.0}
+```
+
+---
+
 ## Architecture
 
 ```
@@ -489,12 +667,15 @@ print(ReportGenerator().generate(e.run_tests()))
 ├──────────────────────────────────────────────────────────────┤
 │                     FastAPI REST API                         │
 │  /evaluate  /guardrails  /pentest  /compliance  /metrics     │
-├────────────────────────────────────────────────────────────── ┤
+├──────────────────────────────────────────────────────────────┤
+│           🚦 Rate Limiter  +  📋 Policy Manager              │
+│  TokenBucket / SlidingWindow / Composite + YAML/JSON loader  │
+├──────────────────────────────────────────────────────────────┤
 │             🔴 Penetration Test Agent                        │
 │  AdversarialTester → GuardrailEngine → PluginManager         │
 │  ContentTransformer → AuditLogger → FeedbackLoop → Profiler  │
 │  → PenTestReport (Markdown / JSON / CSV)                     │
-├───────────────────────────────────────────────────────────── ┤
+├──────────────────────────────────────────────────────────────┤
 │             🗂️ Compliance Reporter                           │
 │  AuditLogger + PenTestReport → HIPAA / SOC2 / CMMC / GDPR   │
 ├──────────────────┬──────────────────┬────────────────────────┤
@@ -529,6 +710,8 @@ print(ReportGenerator().generate(e.run_tests()))
 | Red-team / pen testing | `adversarial_tester`, `penetration_test_agent`, `performance_profiler` |
 | Internal tools governance | `plugin_system`, `audit_logger`, `api_server` |
 | Threat intelligence | `plugin_system` (`ThreatIntelligencePlugin`, `PromptLeakPlugin`) |
+| Policy-driven deployment | `policy_manager` (YAML/JSON → engine rules in one call) |
+| API abuse / DoS prevention | `rate_limiter` (`TokenBucketLimiter`, `SlidingWindowLimiter`, `RateLimitMiddleware`) |
 
 ---
 

@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Any
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, timezone
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("GuardrailEngine")
@@ -55,7 +55,7 @@ class EvaluationResult:
     action: Action
     severity: Severity
     matched_rules: List[str]
-    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def __getitem__(self, key: str) -> Any:
         """Dict-style access for backward compatibility."""
@@ -100,7 +100,7 @@ class TestReport:
     passed: int = 0
     failed: int = 0
     duration_ms: float = 0.0
-    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def __post_init__(self) -> None:
         self.total = len(self.results)

@@ -7,7 +7,7 @@ Provides search, filtering, and export capabilities.
 import json
 import sqlite3
 import csv
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Optional, Union
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -29,7 +29,7 @@ class AuditEntry:
 
     def __post_init__(self):
         if not self.timestamp:
-            self.timestamp = datetime.utcnow().isoformat()
+            self.timestamp = datetime.now(timezone.utc).isoformat()
         if self.matched_rules is None:
             self.matched_rules = []
         if self.metadata is None:

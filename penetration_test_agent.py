@@ -34,7 +34,7 @@ import csv
 import json
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -293,7 +293,7 @@ class PenetrationTestAgent:
         if session is None:
             session = PenTestSession()
 
-        started_at = datetime.utcnow().isoformat()
+        started_at = datetime.now(timezone.utc).isoformat()
         t0 = time.perf_counter()
 
         # ── Per-session helpers ──────────────────────────────────────────────
@@ -331,7 +331,7 @@ class PenetrationTestAgent:
         # ── Recommendations ──────────────────────────────────────────────────
         recommendations = self._generate_recommendations(category_summaries, feedback)
 
-        finished_at = datetime.utcnow().isoformat()
+        finished_at = datetime.now(timezone.utc).isoformat()
         duration_s = time.perf_counter() - t0
 
         report = PenTestReport(

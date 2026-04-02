@@ -226,7 +226,7 @@ elif page == "Adversarial Testing":
             from penetration_test_agent import PenTestSession, PenetrationTestAgent
 
             session = PenTestSession(
-                name=f"dashboard-{datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%S')}",
+                name=f"dashboard-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S')}",
                 include_plugins=include_plugins,
                 audit_db_path="pentest_audit.db",
                 feedback_db_path="pentest_feedback.db",

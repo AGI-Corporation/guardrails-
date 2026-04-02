@@ -156,3 +156,7 @@ class RAGGuardrailProcessor:
             ),
             "blocked_reason": result.blocked_reason,
         }
+
+
+# Alias for backward compatibility and README usage
+RAGGuardrails = RAGGuardrailProcessor
