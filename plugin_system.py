@@ -206,12 +206,116 @@ class LengthPlugin(GuardrailPlugin):
         return PluginResult(plugin_name=self.name, passed=True, score=0.0, action="allow")
 
 
+class ThreatIntelligencePlugin(GuardrailPlugin):
+    """
+    Detects known attack patterns derived from common vulnerability classes:
+    SQL injection, command injection, path traversal, and malicious prompt
+    signatures seen in the wild.
+    """
+
+    # Attack signatures — (label, regex_pattern) pairs
+    SIGNATURES: List[tuple] = [
+        # SQL injection
+        ("sql_injection", r"(?i)\b(union\s+select|drop\s+table|insert\s+into|delete\s+from|exec\s*\(|xp_cmdshell)\b"),
+        # Command injection
+        ("command_injection", r"(?:;|\||\|\|)\s*(?:ls|cat|rm|wget|curl|bash|sh|python|nc|netcat|chmod)\b"),
+        # Path traversal
+        ("path_traversal", r"\.\.[/\\](?:\.\.[/\\]){1,}"),
+        # Known jailbreak markers
+        ("jailbreak_marker", r"(?i)\b(DAN|do\s+anything\s+now|developer\s+mode|jailbreak|uncensored\s+mode)\b"),
+        # Prompt injection keywords
+        ("prompt_injection", r"(?i)(ignore\s+(all\s+)?(previous|prior|above)\s+instructions|disregard\s+(your\s+)?guidelines)"),
+        # SSRF / URL exfiltration
+        ("ssrf_attempt", r"(?i)(file://|gopher://|dict://|ftp://|ldap://|http://(?:169\.254|127\.|10\.|192\.168|172\.(?:1[6-9]|2\d|3[01]))[^\s]*)"),
+        # Known malware-related terms
+        ("malware_reference", r"(?i)\b(keylogger|ransomware|rootkit|botnet|c2\s+server|command\s+and\s+control|payload\s+deliver)\b"),
+    ]
+
+    def __init__(self, block_on_match: bool = True):
+        import re as _re
+        self._compiled = [
+            (label, _re.compile(pattern))
+            for label, pattern in self.SIGNATURES
+        ]
+        self.block_on_match = block_on_match
+
+    @property
+    def name(self) -> str:
+        return "threat_intelligence"
+
+    @property
+    def description(self) -> str:
+        return "Detects SQL injection, command injection, path traversal, and known jailbreak signatures"
+
+    def evaluate(self, text: str, context: Optional[Dict] = None) -> PluginResult:
+        matched: List[str] = []
+        for label, pattern in self._compiled:
+            if pattern.search(text):
+                matched.append(label)
+
+        if matched:
+            action = "block" if self.block_on_match else "warn"
+            return PluginResult(
+                plugin_name=self.name,
+                passed=False,
+                score=min(1.0, len(matched) / len(self._compiled)),
+                action=action,
+                details={"matched_signatures": matched},
+            )
+        return PluginResult(plugin_name=self.name, passed=True, score=0.0, action="allow")
+
+
+class PromptLeakPlugin(GuardrailPlugin):
+    """
+    Detects attempts to extract the system prompt, hidden instructions, or
+    internal tool configurations from an LLM — a critical risk in deployed
+    AI products.
+    """
+
+    _LEAK_PATTERNS: List[str] = [
+        r"(?i)(what\s+(is|are)\s+(your\s+)?(system\s+prompt|instructions?|prompt|directives?))",
+        r"(?i)(show\s+me\s+(your\s+)?(system\s+|hidden\s+)?(instructions?|prompt|config))",
+        r"(?i)(repeat\s+(the|your)\s+(system\s+)?prompt)",
+        r"(?i)(output\s+(the|your)\s+(system\s+)?(instructions?|prompt))",
+        r"(?i)(print\s+(the|your)\s+(system\s+)?prompt)",
+        r"(?i)(ignore\s+(above|previous)\s+.{0,40}print\s+(original\s+)?(prompt|instructions?))",
+        r"(?i)(what\s+were\s+you\s+told)",
+        r"(?i)(verbatim\s+(copy|repeat|output|print)\s+.{0,30}(prompt|instruction|context))",
+    ]
+
+    def __init__(self):
+        import re as _re
+        self._compiled = [_re.compile(p) for p in self._LEAK_PATTERNS]
+
+    @property
+    def name(self) -> str:
+        return "prompt_leak_detector"
+
+    @property
+    def description(self) -> str:
+        return "Detects attempts to extract system prompts or internal instructions"
+
+    def evaluate(self, text: str, context: Optional[Dict] = None) -> PluginResult:
+        matched_count = sum(1 for p in self._compiled if p.search(text))
+        if matched_count > 0:
+            return PluginResult(
+                plugin_name=self.name,
+                passed=False,
+                score=min(1.0, matched_count / len(self._compiled)),
+                action="block",
+                details={"matched_patterns": matched_count, "category": "prompt_leak"},
+            )
+        return PluginResult(plugin_name=self.name, passed=True, score=0.0, action="allow")
+
+
 def create_default_plugin_engine() -> PluginEngine:
     """Create a plugin engine with default plugins"""
     engine = PluginEngine()
     engine.register(EntropyPlugin())
     engine.register(RepetitionPlugin())
     engine.register(LengthPlugin())
+    engine.register(ThreatIntelligencePlugin())
+    engine.register(PromptLeakPlugin())
     return engine
 
 
